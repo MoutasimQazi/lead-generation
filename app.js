@@ -176,7 +176,7 @@ function renderNav(active) {
 
   host.innerHTML =
     '<a class="logo" href="index.html" title="Lead Search">' +
-      '<img src="logo.png" alt="Movenetics Digital">' +
+      '<img src="logo.png?v=20260822" alt="Movenetics Digital">' +
     '</a>' +
     links.map((l) =>
       '<a class="navitem' + (l.id === active ? ' active' : '') + '" href="' + l.href + '">' +
