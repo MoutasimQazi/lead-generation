@@ -78,10 +78,75 @@ function renderHead() {
   }
 }
 
-$('settingsBtn').addEventListener('click', () => {
+$('settingsBtn').addEventListener('click', async () => {
   if (!ds) return;
+
+  $('settingsSub').textContent = ds.is_protected
+    ? 'This dataset is protected, so only its search setting can be changed.'
+    : 'Renaming affects only the label — the underlying table keeps its name.';
+  $('setName').value = ds.display_name;
+  $('setName').disabled = ds.is_protected;
+  $('setSearchable').checked = ds.is_searchable;
+  $('setFolder').disabled = ds.is_protected;
   $('delConfirm').value = '';
+  $('delConfirm').disabled = ds.is_protected;
+  $('delBtn').disabled = ds.is_protected;
+
+  try {
+    const { folders } = await apiGet('api/folders');
+    $('setFolder').innerHTML = '<option value="">No folder</option>' +
+      folders.map(folder => '<option value="' + folder.id + '"' +
+        (folder.id === ds.folder_id ? ' selected' : '') + '>' +
+        esc(folder.name) + '</option>').join('');
+  } catch (err) {
+    $('setFolder').innerHTML = '<option value="">No folder</option>';
+  }
+
   openModal('settingsModal');
+});
+
+$('settingsSave').addEventListener('click', async () => {
+  if (!ds) return;
+
+  const button = $('settingsSave');
+  const body = { is_searchable: $('setSearchable').checked };
+
+  if (!ds.is_protected) {
+    body.display_name = $('setName').value.trim();
+    body.folder_id = $('setFolder').value ? Number($('setFolder').value) : null;
+
+    if (!body.display_name) {
+      $('setName').focus();
+      return toast('The dataset needs a name.', true);
+    }
+  }
+
+  try {
+    button.disabled = true;
+    button.textContent = 'Saving…';
+
+    const result = await apiPatch('api/datasets/' + id, body);
+
+    if (result.dataset) {
+      ds = result.dataset;
+      columns = ds.columns || columns;
+      renderHead();
+    } else {
+      // Compatibility with an older backend response during rolling deploys.
+      ds.display_name = body.display_name ?? ds.display_name;
+      ds.folder_id = body.folder_id ?? ds.folder_id;
+      ds.is_searchable = body.is_searchable;
+      renderHead();
+    }
+
+    closeModal('settingsModal');
+    toast('Dataset settings saved.');
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Save changes';
+  }
 });
 
 $('delBtn').addEventListener('click', async () => {
