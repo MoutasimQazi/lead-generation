@@ -165,16 +165,33 @@ function install_error_handlers(): void
             json_out(['success' => false, 'error' => $e->getMessage()] + $e->extra, $e->status);
         }
 
-        error_log('[lead-site] ' . $e::class . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+        $errorId = substr(hash('sha256', microtime(true) . ':' . getmypid() . ':' . $e->getMessage()), 0, 12);
 
-        $payload = ['success' => false, 'error' => 'Something went wrong on the server.'];
+        error_log(
+            '[lead-site][' . $errorId . '] ' . $e::class . ': ' . $e->getMessage()
+            . ' @ ' . $e->getFile() . ':' . $e->getLine()
+        );
+
+        $payload = [
+            'success'  => false,
+            'error'    => 'Something went wrong on the server. Reference: ' . $errorId,
+            'error_id' => $errorId,
+        ];
 
         // config() itself throws when .env is missing or invalid. Consulting it
         // unguarded here would throw from inside the exception handler, which
         // PHP turns into an unreadable fatal — exactly when a clear message
         // matters most. So the misconfiguration case is reported directly.
         try {
-            if (config('is_dev')) {
+            $user = function_exists('current_user') ? current_user() : null;
+            $admin = is_array($user) && ($user['role'] ?? '') === 'admin';
+
+            if (config('is_dev') || $admin) {
+                // The API is same-origin and current_user() revalidates the
+                // session against app_users. Giving an authenticated admin the
+                // DB/PHP exception makes production faults diagnosable without
+                // exposing internals to employees or anonymous visitors.
+                $payload['error']  = 'Server error: ' . $e->getMessage();
                 $payload['detail'] = $e->getMessage();
                 $payload['where']  = $e->getFile() . ':' . $e->getLine();
             }
