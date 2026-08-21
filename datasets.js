@@ -82,8 +82,17 @@ function render() {
   $$('[data-delfolder]').forEach(b =>
     b.addEventListener('click', () => deleteFolder(Number(b.dataset.delfolder))));
 
+  $$('.dscard .switch').forEach(label =>
+    label.addEventListener('click', event => event.stopPropagation()));
+
   $$('[data-searchable]').forEach(el =>
     el.addEventListener('change', () => toggleSearchable(Number(el.dataset.searchable), el.checked)));
+
+  $$('[data-user-search]').forEach(el => {
+    el.addEventListener('click', event => event.stopPropagation());
+    el.addEventListener('change', () =>
+      togglePersonalSearch(Number(el.dataset.userSearch), el.checked));
+  });
 }
 
 function card(d) {
@@ -98,7 +107,12 @@ function card(d) {
         '<input type="checkbox" data-searchable="' + d.id + '"' + (d.is_searchable ? ' checked' : '') +
         (d.status !== 'ready' ? ' disabled' : '') + '>' +
         '<span class="track"></span>Searchable</label>'
-    : (d.is_searchable ? '<span class="tag ok">searchable</span>' : '');
+    : '<label class="switch" title="Include this assigned dataset in your AI searches">' +
+        '<input type="checkbox" data-user-search="' + d.id + '"' +
+          (d.user_search_enabled ? ' checked' : '') +
+          (!d.is_searchable || d.status !== 'ready' ? ' disabled' : '') + '>' +
+        '<span class="track"></span>' +
+        (d.is_searchable ? 'Use in my search' : 'Admin disabled') + '</label>';
 
   return '<a class="dscard' + (d.is_protected ? ' locked' : '') + '" href="dataset.html?id=' + d.id + '">' +
     '<span>' +
@@ -142,6 +156,18 @@ async function toggleSearchable(id, on) {
     const d = datasets.find(x => x.id === id);
     if (d) d.is_searchable = on;
     toast(on ? 'Now searchable by the AI.' : 'Removed from AI search.');
+  } catch (err) {
+    toast(err.message, true);
+    await load();
+  }
+}
+
+async function togglePersonalSearch(id, on) {
+  try {
+    await apiPatch('api/datasets/' + id + '/search-preference', { enabled: on });
+    const dataset = datasets.find(item => item.id === id);
+    if (dataset) dataset.user_search_enabled = on;
+    toast(on ? 'Included in your AI searches.' : 'Excluded from your AI searches.');
   } catch (err) {
     toast(err.message, true);
     await load();

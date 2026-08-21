@@ -498,6 +498,18 @@ select:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px var(-
 .modal-card h2{margin:0 0 6px;font-size:18px;font-weight:700;letter-spacing:-.015em}
 .modal-card .sub{margin:0 0 18px;font-size:13.5px;color:var(--ink-2)}
 .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px;flex-wrap:wrap}
+.assignment-list{
+  display:grid;gap:7px;max-height:190px;overflow:auto;margin:0 0 18px;
+  padding:8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--sunken);
+}
+.assignment-person{
+  display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:8px;
+  background:var(--card);border:1px solid var(--line-2);cursor:pointer;
+}
+.assignment-person input{accent-color:var(--primary)}
+.assignment-person span{min-width:0}
+.assignment-person strong{display:block;font-size:13px}
+.assignment-person small{display:block;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ── dataset cards ──────────────────────────────────────────────────────── */
 .dscard{

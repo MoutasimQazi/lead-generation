@@ -30,6 +30,20 @@ function load_dataset(int $id): array
     $row['columns'] = json_decode((string) $row['columns_json'], true) ?: [];
     $row['files']   = json_decode((string) $row['source_files'], true) ?: [];
 
+    $user = current_user();
+    if ($user && $user['role'] !== 'admin') {
+        $assignment = db_one(
+            'SELECT search_enabled FROM dataset_assignments WHERE dataset_id = ? AND user_id = ?',
+            [$id, (int) $user['id']]
+        );
+
+        if (!$assignment) {
+            fail('This dataset has not been assigned to your account.', 403);
+        }
+
+        $row['user_search_enabled'] = (int) $assignment['search_enabled'] === 1;
+    }
+
     ident_assert((string) $row['table_name']);
 
     return $row;
@@ -76,6 +90,9 @@ function dataset_summary(array $d): array
         'row_count'     => (int) $d['row_count'],
         'column_count'  => count(json_decode((string) $d['columns_json'], true) ?: []),
         'is_searchable' => (int) $d['is_searchable'] === 1,
+        'user_search_enabled' => array_key_exists('user_search_enabled', $d)
+            ? (bool) $d['user_search_enabled']
+            : true,
         'is_protected'  => (int) $d['is_protected'] === 1,
         'status'        => $d['status'],
         'error_message' => $d['error_message'],
@@ -117,13 +134,25 @@ function route_dataset_filter_options(int $id): never
 
 function route_datasets_list(): never
 {
-    require_auth();
+    $user = require_auth();
 
-    $rows = db_all(
-        'SELECT d.*, f.name AS folder_name
-           FROM datasets d
-           LEFT JOIN folders f ON f.id = d.folder_id'
-    );
+    if ($user['role'] === 'admin') {
+        $rows = db_all(
+            'SELECT d.*, f.name AS folder_name
+               FROM datasets d
+               LEFT JOIN folders f ON f.id = d.folder_id'
+        );
+    } else {
+        $rows = db_all(
+            'SELECT d.*, f.name AS folder_name,
+                    a.search_enabled AS user_search_enabled
+               FROM dataset_assignments a
+               JOIN datasets d ON d.id = a.dataset_id
+               LEFT JOIN folders f ON f.id = d.folder_id
+              WHERE a.user_id = ?',
+            [(int) $user['id']]
+        );
+    }
 
     // Sort this small metadata list in PHP. SQL ORDER BY on the join can spill
     // to MariaDB's Aria tmpdir, which is read-only on the current cPanel host.
@@ -233,6 +262,131 @@ function route_datasets_update(int $id): never
             'files'   => $updated['files'],
         ],
     ]);
+}
+
+/* ── employee assignment and personal search preference ───────────────── */
+
+function route_dataset_assignments_get(int $id): never
+{
+    require_admin();
+    load_dataset($id);
+
+    $employees = db_all(
+        'SELECT id, email, full_name, is_active
+           FROM app_users
+          WHERE role = "employee"'
+    );
+    $assigned = [];
+
+    foreach (db_all(
+        'SELECT user_id, search_enabled FROM dataset_assignments WHERE dataset_id = ?',
+        [$id]
+    ) as $row) {
+        $assigned[(int) $row['user_id']] = (int) $row['search_enabled'] === 1;
+    }
+
+    usort($employees, static fn(array $a, array $b): int =>
+        strcasecmp((string) $a['full_name'], (string) $b['full_name'])
+    );
+
+    json_ok(['employees' => array_map(static fn(array $employee): array => [
+        'id'             => (int) $employee['id'],
+        'email'          => $employee['email'],
+        'full_name'      => $employee['full_name'],
+        'is_active'      => (int) $employee['is_active'] === 1,
+        'assigned'       => array_key_exists((int) $employee['id'], $assigned),
+        'search_enabled' => $assigned[(int) $employee['id']] ?? false,
+    ], $employees)]);
+}
+
+function route_dataset_assignments_update(int $id): never
+{
+    $admin = require_admin();
+    require_csrf();
+    load_dataset($id);
+
+    $ids = json_body()['user_ids'] ?? [];
+    if (!is_array($ids)) {
+        fail('user_ids must be an array.', 422);
+    }
+
+    $ids = array_values(array_unique(array_map('intval', $ids)));
+    $ids = array_values(array_filter($ids, static fn(int $userId): bool => $userId > 0));
+
+    if ($ids !== []) {
+        $marks = implode(',', array_fill(0, count($ids), '?'));
+        $valid = array_map('intval', array_column(db_all(
+            'SELECT id FROM app_users WHERE role = "employee" AND is_active = 1 AND id IN (' . $marks . ')',
+            $ids
+        ), 'id'));
+        sort($ids);
+        sort($valid);
+
+        if ($ids !== $valid) {
+            fail('One or more selected employees are unavailable.', 422);
+        }
+    }
+
+    db_transaction(static function () use ($id, $ids, $admin): void {
+        $existing = [];
+        foreach (db_all(
+            'SELECT user_id, search_enabled FROM dataset_assignments WHERE dataset_id = ?',
+            [$id]
+        ) as $row) {
+            $existing[(int) $row['user_id']] = (int) $row['search_enabled'];
+        }
+
+        if ($ids === []) {
+            db_exec('DELETE FROM dataset_assignments WHERE dataset_id = ?', [$id]);
+            return;
+        }
+
+        $marks = implode(',', array_fill(0, count($ids), '?'));
+        db_exec(
+            'DELETE FROM dataset_assignments WHERE dataset_id = ? AND user_id NOT IN (' . $marks . ')',
+            array_merge([$id], $ids)
+        );
+
+        foreach ($ids as $userId) {
+            if (array_key_exists($userId, $existing)) {
+                continue;
+            }
+
+            db_exec(
+                'INSERT INTO dataset_assignments
+                   (dataset_id, user_id, search_enabled, assigned_by)
+                 VALUES (?, ?, 1, ?)',
+                [$id, $userId, (int) $admin['id']]
+            );
+        }
+    });
+
+    audit('dataset.assign', $admin, $id, ['employee_ids' => $ids]);
+    json_ok(['user_ids' => $ids]);
+}
+
+function route_dataset_search_preference(int $id): never
+{
+    $user = require_auth();
+    require_csrf();
+
+    if ($user['role'] === 'admin') {
+        fail('Administrators control global search availability instead.', 422);
+    }
+
+    $dataset = load_dataset($id); // also proves this employee is assigned
+    if ((int) $dataset['is_searchable'] !== 1) {
+        fail('An administrator has not enabled AI search for this dataset.', 409);
+    }
+
+    $enabled = body_bool('enabled', false);
+    db_exec(
+        'UPDATE dataset_assignments SET search_enabled = ? WHERE dataset_id = ? AND user_id = ?',
+        [$enabled ? 1 : 0, $id, (int) $user['id']]
+    );
+
+    audit('dataset.search_preference', $user, $id, ['enabled' => $enabled]);
+    json_ok(['enabled' => $enabled]);
 }
 
 function route_datasets_delete(int $id): never

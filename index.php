@@ -88,6 +88,9 @@ function routes(): array
         ['GET',    '/api/datasets/{id}',             'route_datasets_get'],
         ['GET',    '/api/datasets/{id}/filter-options', 'route_dataset_filter_options'],
         ['PATCH',  '/api/datasets/{id}',             'route_datasets_update'],
+        ['GET',    '/api/datasets/{id}/assignments', 'route_dataset_assignments_get'],
+        ['PATCH',  '/api/datasets/{id}/assignments', 'route_dataset_assignments_update'],
+        ['PATCH',  '/api/datasets/{id}/search-preference', 'route_dataset_search_preference'],
         ['DELETE', '/api/datasets/{id}',             'route_datasets_delete'],
         ['GET',    '/api/datasets/{id}/export',      'route_dataset_export'],
 
@@ -151,7 +154,7 @@ function dispatch(): never
         // setup.php locks after the first admin is created. Older deployments
         // can therefore have working authentication but none of the management
         // tables added later. Self-heal on the first authenticated request.
-        if (preg_match('#^/api/(?:datasets|folders|uploads|imports)(?:/|$)#', $path)) {
+        if (preg_match('#^/api/(?:datasets|folders|uploads|imports|search)(?:/|$)#', $path)) {
             require_auth();
             ensure_management_schema();
         }

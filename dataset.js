@@ -8,6 +8,7 @@ let sort = '';
 let dir = 'asc';
 let filters = {};
 let filterOptions = {};
+let assignmentEmployees = [];
 
 (async () => {
   await requireSession({ page: 'datasets' });
@@ -62,8 +63,9 @@ function renderHead() {
   $('tools').hidden = false;
   $('exportBtn').href = 'api/datasets/' + id + '/export';
 
+  $('settingsBtn').hidden = false;
+
   if (session.user.is_admin) {
-    $('settingsBtn').hidden = false;
     $('settingsSub').textContent = ds.is_protected
       ? 'This dataset is protected and cannot be deleted.'
       : 'Deleting removes this dataset and all of its rows permanently.';
@@ -81,25 +83,58 @@ function renderHead() {
 $('settingsBtn').addEventListener('click', async () => {
   if (!ds) return;
 
-  $('settingsSub').textContent = ds.is_protected
-    ? 'This dataset is protected, so only its search setting can be changed.'
-    : 'Renaming affects only the label — the underlying table keeps its name.';
+  $('settingsSub').textContent = !session.user.is_admin
+    ? 'Choose whether this assigned dataset is included in your own AI searches.'
+    : (ds.is_protected
+      ? 'This dataset is protected, so only its global search setting and assignments can be changed.'
+      : 'Renaming affects only the label — the underlying table keeps its name.');
   $('setName').value = ds.display_name;
-  $('setName').disabled = ds.is_protected;
-  $('setSearchable').checked = ds.is_searchable;
-  $('setFolder').disabled = ds.is_protected;
+  $('setName').disabled = !session.user.is_admin || ds.is_protected;
+  $('setSearchable').checked = session.user.is_admin
+    ? ds.is_searchable
+    : ds.user_search_enabled;
+  $('setSearchable').disabled = !session.user.is_admin && !ds.is_searchable;
+  $('searchableLabel').textContent = session.user.is_admin
+    ? 'Make this dataset available for employee AI searches'
+    : (ds.is_searchable
+      ? 'Include this dataset in my AI searches'
+      : 'AI search is disabled by an administrator');
+  $('setFolder').disabled = !session.user.is_admin || ds.is_protected;
   $('delConfirm').value = '';
-  $('delConfirm').disabled = ds.is_protected;
-  $('delBtn').disabled = ds.is_protected;
+  $('delConfirm').disabled = !session.user.is_admin || ds.is_protected;
+  $('delBtn').disabled = !session.user.is_admin || ds.is_protected;
+  $('deleteSection').hidden = !session.user.is_admin;
+  $('assignmentSection').hidden = !session.user.is_admin;
 
-  try {
-    const { folders } = await apiGet('api/folders');
-    $('setFolder').innerHTML = '<option value="">No folder</option>' +
-      folders.map(folder => '<option value="' + folder.id + '"' +
-        (folder.id === ds.folder_id ? ' selected' : '') + '>' +
-        esc(folder.name) + '</option>').join('');
-  } catch (err) {
-    $('setFolder').innerHTML = '<option value="">No folder</option>';
+  if (session.user.is_admin) {
+    try {
+      const [folderData, assignmentData] = await Promise.all([
+        apiGet('api/folders'),
+        apiGet('api/datasets/' + id + '/assignments'),
+      ]);
+
+      $('setFolder').innerHTML = '<option value="">No folder</option>' +
+        folderData.folders.map(folder => '<option value="' + folder.id + '"' +
+          (folder.id === ds.folder_id ? ' selected' : '') + '>' +
+          esc(folder.name) + '</option>').join('');
+
+      assignmentEmployees = assignmentData.employees || [];
+      $('assignmentList').innerHTML = assignmentEmployees.length
+        ? assignmentEmployees.map(employee =>
+            '<label class="assignment-person">' +
+              '<input type="checkbox" data-assignee="' + employee.id + '"' +
+                (employee.assigned ? ' checked' : '') +
+                (!employee.is_active ? ' disabled' : '') + '>' +
+              '<span><strong>' + esc(employee.full_name) + '</strong>' +
+              '<small>' + esc(employee.email) +
+                (!employee.is_active ? ' · inactive' : '') + '</small></span>' +
+            '</label>'
+          ).join('')
+        : '<p class="muted" style="margin:6px">No employee accounts yet.</p>';
+    } catch (err) {
+      $('setFolder').innerHTML = '<option value="">No folder</option>';
+      $('assignmentList').innerHTML = '<p class="muted" style="margin:6px">Could not load employees.</p>';
+    }
   }
 
   openModal('settingsModal');
@@ -109,9 +144,13 @@ $('settingsSave').addEventListener('click', async () => {
   if (!ds) return;
 
   const button = $('settingsSave');
-  const body = { is_searchable: $('setSearchable').checked };
+  const body = {};
 
-  if (!ds.is_protected) {
+  if (session.user.is_admin) {
+    body.is_searchable = $('setSearchable').checked;
+  }
+
+  if (session.user.is_admin && !ds.is_protected) {
     body.display_name = $('setName').value.trim();
     body.folder_id = $('setFolder').value ? Number($('setFolder').value) : null;
 
@@ -125,7 +164,19 @@ $('settingsSave').addEventListener('click', async () => {
     button.disabled = true;
     button.textContent = 'Saving…';
 
-    const result = await apiPatch('api/datasets/' + id, body);
+    let result;
+
+    if (session.user.is_admin) {
+      result = await apiPatch('api/datasets/' + id, body);
+
+      const userIds = $$('[data-assignee]:checked').map(input => Number(input.dataset.assignee));
+      await apiPatch('api/datasets/' + id + '/assignments', { user_ids: userIds });
+    } else {
+      result = await apiPatch('api/datasets/' + id + '/search-preference', {
+        enabled: $('setSearchable').checked,
+      });
+      ds.user_search_enabled = result.enabled;
+    }
 
     if (result.dataset) {
       ds = result.dataset;
@@ -135,7 +186,7 @@ $('settingsSave').addEventListener('click', async () => {
       // Compatibility with an older backend response during rolling deploys.
       ds.display_name = body.display_name ?? ds.display_name;
       ds.folder_id = body.folder_id ?? ds.folder_id;
-      ds.is_searchable = body.is_searchable;
+      if (body.is_searchable !== undefined) ds.is_searchable = body.is_searchable;
       renderHead();
     }
 

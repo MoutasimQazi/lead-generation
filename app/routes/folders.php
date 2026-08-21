@@ -27,7 +27,7 @@ function folder_slug(string $name, ?int $ignoreId = null): string
 
 function route_folders_list(): never
 {
-    require_auth();
+    $user = require_auth();
 
     // Do the tiny metadata aggregation in PHP. GROUP BY/ORDER BY makes MariaDB
     // create an Aria #sql-temptable on some cPanel builds, and this host has a
@@ -35,7 +35,17 @@ function route_folders_list(): never
     $folders = db_all('SELECT id, name, slug, created_at FROM folders');
     $counts  = [];
 
-    foreach (db_all('SELECT folder_id, row_count FROM datasets WHERE folder_id IS NOT NULL') as $dataset) {
+    $datasetRows = $user['role'] === 'admin'
+        ? db_all('SELECT folder_id, row_count FROM datasets WHERE folder_id IS NOT NULL')
+        : db_all(
+            'SELECT d.folder_id, d.row_count
+               FROM dataset_assignments a
+               JOIN datasets d ON d.id = a.dataset_id
+              WHERE a.user_id = ? AND d.folder_id IS NOT NULL',
+            [(int) $user['id']]
+        );
+
+    foreach ($datasetRows as $dataset) {
         $folderId = (int) $dataset['folder_id'];
 
         if (!isset($counts[$folderId])) {
@@ -44,6 +54,13 @@ function route_folders_list(): never
 
         $counts[$folderId]['dataset_count']++;
         $counts[$folderId]['total_rows'] += (int) $dataset['row_count'];
+    }
+
+    if ($user['role'] !== 'admin') {
+        $folders = array_values(array_filter(
+            $folders,
+            static fn(array $folder): bool => isset($counts[(int) $folder['id']])
+        ));
     }
 
     usort($folders, static fn(array $a, array $b): int =>

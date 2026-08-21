@@ -81,6 +81,24 @@ function migration_statements(): array
                 REFERENCES app_users(id) ON DELETE SET NULL
             ) $charset",
 
+        'dataset_assignments' => "
+            CREATE TABLE IF NOT EXISTS dataset_assignments (
+              dataset_id         INT UNSIGNED NOT NULL,
+              user_id            INT UNSIGNED NOT NULL,
+              search_enabled     TINYINT(1) NOT NULL DEFAULT 1,
+              assigned_by        INT UNSIGNED NULL,
+              assigned_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (dataset_id, user_id),
+              KEY idx_assignment_user (user_id, search_enabled),
+              CONSTRAINT fk_assignment_dataset FOREIGN KEY (dataset_id)
+                REFERENCES datasets(id) ON DELETE CASCADE,
+              CONSTRAINT fk_assignment_user FOREIGN KEY (user_id)
+                REFERENCES app_users(id) ON DELETE CASCADE,
+              CONSTRAINT fk_assignment_actor FOREIGN KEY (assigned_by)
+                REFERENCES app_users(id) ON DELETE SET NULL
+            ) $charset",
+
         'upload_stages' => "
             CREATE TABLE IF NOT EXISTS upload_stages (
               id         CHAR(32) NOT NULL,
@@ -206,7 +224,7 @@ function run_migrations(): array
  */
 function ensure_management_schema(): void
 {
-    $required = ['folders', 'datasets', 'upload_stages', 'import_jobs', 'audit_log'];
+    $required = ['folders', 'datasets', 'dataset_assignments', 'upload_stages', 'import_jobs', 'audit_log'];
     $missing  = false;
 
     foreach ($required as $table) {

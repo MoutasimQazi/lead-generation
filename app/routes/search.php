@@ -95,14 +95,33 @@ function search_dataset_description(array $dataset): string
 }
 
 /** Schema summary for every dataset the admin has marked searchable. */
-function searchable_schemas(): array
+function searchable_schemas(array $user): array
 {
-    $rows = db_all(
-        'SELECT table_name, display_name, columns_json, row_count
-           FROM datasets
-          WHERE is_searchable = 1 AND status = "ready"
-       ORDER BY is_protected DESC, display_name ASC'
-    );
+    if ($user['role'] === 'admin') {
+        $rows = db_all(
+            'SELECT table_name, display_name, columns_json, row_count, is_protected
+               FROM datasets
+              WHERE is_searchable = 1 AND status = "ready"'
+        );
+    } else {
+        $rows = db_all(
+            'SELECT d.table_name, d.display_name, d.columns_json, d.row_count, d.is_protected
+               FROM dataset_assignments a
+               JOIN datasets d ON d.id = a.dataset_id
+              WHERE a.user_id = ?
+                AND a.search_enabled = 1
+                AND d.is_searchable = 1
+                AND d.status = "ready"',
+            [(int) $user['id']]
+        );
+    }
+
+    usort($rows, static function (array $a, array $b): int {
+        $protected = (int) $b['is_protected'] <=> (int) $a['is_protected'];
+        return $protected !== 0
+            ? $protected
+            : strcasecmp((string) $a['display_name'], (string) $b['display_name']);
+    });
 
     $schemas = [];
 
@@ -141,10 +160,15 @@ function route_search(): never
         fail('Search is not configured yet — set N8N_WEBHOOK_URL in .env.', 503);
     }
 
-    $schemas = searchable_schemas();
+    $schemas = searchable_schemas($user);
 
     if ($schemas === []) {
-        fail('No datasets are currently enabled for search. Ask an admin to enable one.', 422);
+        fail(
+            $user['role'] === 'admin'
+                ? 'No datasets are currently enabled for search.'
+                : 'No assigned datasets are enabled in your search. Open Datasets to choose one, or ask an admin for access.',
+            422
+        );
     }
 
     $requestId = bin2hex(random_bytes(16));
