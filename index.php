@@ -8,7 +8,9 @@ declare(strict_types=1);
  * API paths are rewritten here by .htaccess.
  */
 
-$appRoot = dirname(__DIR__) . '/app';
+// Single-folder layout: app/ sits inside the document root, protected by
+// .htaccess rather than by being above it. See DEPLOY.md.
+$appRoot = __DIR__ . '/app';
 
 require_once $appRoot . '/config.php';
 require_once $appRoot . '/http.php';

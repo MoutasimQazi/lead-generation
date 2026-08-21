@@ -42,25 +42,26 @@ tables. That is a real privilege, and the reason uploads are admin-only.
 
 `app/` must sit **outside** the document root. On a normal cPanel account:
 
+Copy the repo's two top-level folders so they end up as **siblings**, with
+`app/` one level above the document root:
+
 ```
 /home/<cpaneluser>/
-├── leadapp/              ← the app/ folder, renamed
-│   ├── config.php
-│   ├── db.php
-│   ├── lib/  routes/  scripts/  tests/
-│   └── migrations.php
+├── app/                  ← keep this name; do not rename it
+│   ├── config.php  db.php  http.php  auth.php  migrations.php
+│   └── lib/  routes/  scripts/  tests/
 ├── .env                  ← NOT in public_html
 ├── var/uploads/          ← created automatically, chmod 770
-└── public_html/          ← contents of public_html/ from this repo
+└── public_html/          ← contents of the repo's public_html/
     ├── .htaccess  .user.ini
     ├── index.php  setup.php
     ├── index.html  login.html  datasets.html  dataset.html  upload.html  users.html
-    ├── app.js  styles.css  logo.png
+    └── app.js  styles.css  logo.png
 ```
 
-`public_html/index.php` resolves the app with `dirname(__DIR__) . '/app'`, so if
-you rename `app/` to `leadapp/`, change that one line to match — or just keep
-the folder named `app`.
+The paths are relative and resolved at runtime — `public_html/index.php` looks
+for `dirname(__DIR__) . '/app'`, and `.env` is read from that same parent
+directory. Keep the folder named `app` and there is nothing to edit.
 
 If your host forces everything into `public_html`, the shipped `.htaccess`
 blocks `app/`, `var/` and `.env` — but outside the docroot is strictly safer.
