@@ -250,10 +250,20 @@ function require_csrf(): void
     }
 
     // Belt and braces: reject an obviously foreign Origin when one is present.
+    // Compares scheme + host only, allowing for common variations like trailing
+    // slashes or non-standard ports that proxies might introduce.
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
     $appUrl = config('app_url');
 
-    if ($origin !== '' && $appUrl !== '' && rtrim($origin, '/') !== $appUrl) {
-        fail('Request origin not allowed.', 403);
+    if ($origin !== '' && $appUrl !== '') {
+        $originParts = parse_url($origin);
+        $appParts = parse_url($appUrl);
+
+        $originHost = ($originParts['scheme'] ?? '') . '://' . ($originParts['host'] ?? '');
+        $appHost = ($appParts['scheme'] ?? '') . '://' . ($appParts['host'] ?? '');
+
+        if ($originHost !== $appHost) {
+            fail('Request origin not allowed.', 403);
+        }
     }
 }
