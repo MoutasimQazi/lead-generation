@@ -1,0 +1,18 @@
+# Secrets — never commit. See .env.example for the shape.
+.env
+
+# Composer (optional — only needed for .xlsx support)
+vendor/
+composer.lock
+
+# Staged uploads and runtime state
+var/
+
+# Logs
+*.log
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

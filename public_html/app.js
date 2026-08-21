@@ -1,0 +1,220 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Shared frontend helpers: session, API calls, nav, small UI utilities.
+   Loaded by every page except login.html, which uses only api() and boot-free
+   parts of this file.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const $ = (id) => document.getElementById(id);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+/** Session state, filled by requireSession(). */
+const session = { user: null, csrf: null };
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (m) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
+
+const fmt = (n) => Number(n ?? 0).toLocaleString();
+
+function bytes(n) {
+  if (!n) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return (n / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+function initials(name) {
+  return String(name || '?')
+    .split(/\s+/).filter(Boolean).slice(0, 2)
+    .map((w) => w[0].toUpperCase()).join('') || '?';
+}
+
+/* ── API ──────────────────────────────────────────────────────────────────
+   One wrapper so that the CSRF token, credentials and error handling are not
+   re-implemented (and mis-implemented) on five pages.                        */
+
+async function api(method, path, body, opts = {}) {
+  const headers = {};
+
+  if (session.csrf) headers['X-CSRF-Token'] = session.csrf;
+
+  let payload = body;
+
+  if (body !== undefined && !(body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+    payload = JSON.stringify(body);
+  }
+
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      headers,
+      body: payload,
+      credentials: 'same-origin',
+    });
+  } catch (e) {
+    throw new Error('Could not reach the server. Check your connection and try again.');
+  }
+
+  // Session gone or expired: bounce to login, preserving where they were.
+  if (res.status === 401 && !opts.noRedirect) {
+    const back = encodeURIComponent(location.pathname + location.search);
+    location.href = 'login.html?next=' + back;
+    throw new Error('Signed out.');
+  }
+
+  const text = await res.text();
+  let data;
+
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (e) {
+    // A PHP fatal or an Apache error page landed here instead of JSON.
+    throw new Error('The server returned an unreadable response (HTTP ' + res.status + ').');
+  }
+
+  if (!res.ok || data.success === false) {
+    const err = new Error(data.error || data.message || 'HTTP ' + res.status);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+
+  return data;
+}
+
+const apiGet = (p, o) => api('GET', p, undefined, o);
+const apiPost = (p, b, o) => api('POST', p, b, o);
+const apiPatch = (p, b) => api('PATCH', p, b);
+const apiDelete = (p, b) => api('DELETE', p, b);
+
+/* ── session + nav ────────────────────────────────────────────────────── */
+
+/**
+ * Loads the session and renders the nav. Redirects to login when signed out,
+ * and to the search page when a non-admin opens an admin-only page.
+ *
+ * The redirect is a courtesy, not a control — every admin route checks the
+ * role server-side regardless of what the browser does.
+ */
+async function requireSession({ page = '', adminOnly = false } = {}) {
+  let data;
+
+  try {
+    data = await apiGet('api/auth/me', { noRedirect: true });
+  } catch (e) {
+    location.href = 'login.html';
+    throw e;
+  }
+
+  if (!data.authenticated) {
+    const back = encodeURIComponent(location.pathname + location.search);
+    location.href = 'login.html?next=' + back;
+    throw new Error('Not signed in.');
+  }
+
+  session.user = data.user;
+  session.csrf = data.csrf;
+
+  if (adminOnly && !data.user.is_admin) {
+    location.href = 'index.html';
+    throw new Error('Admins only.');
+  }
+
+  renderNav(page);
+  return data.user;
+}
+
+function renderNav(active) {
+  const host = $('nav');
+  if (!host) return;
+
+  const u = session.user;
+  const isAdmin = u.is_admin;
+
+  const links = [
+    { id: 'search', label: 'Search', href: 'index.html' },
+    { id: 'datasets', label: 'Datasets', href: 'datasets.html' },
+    { id: 'upload', label: 'Upload', href: 'upload.html', admin: true },
+    { id: 'users', label: 'Users', href: 'users.html', admin: true },
+  ].filter((l) => !l.admin || isAdmin);
+
+  host.innerHTML =
+    '<a class="logo" href="index.html" title="Lead Search">' +
+      '<img src="logo.png" alt="Movenetics Digital">' +
+    '</a>' +
+    links.map((l) =>
+      '<a class="navitem' + (l.id === active ? ' active' : '') + '" href="' + l.href + '">' +
+        esc(l.label) + '</a>'
+    ).join('') +
+    '<span class="spacer"></span>' +
+    '<span class="pill-dark">' + esc(u.role) + '</span>' +
+    '<span class="avatar" title="' + esc(u.email) + '">' + esc(initials(u.full_name)) + '</span>' +
+    '<span class="whoami">' + esc(u.full_name) + '</span>' +
+    '<button class="signout" id="signout">Sign out</button>';
+
+  $('signout').addEventListener('click', async () => {
+    try { await apiPost('api/auth/logout', {}); } catch (e) { /* leaving anyway */ }
+    location.href = 'login.html';
+  });
+}
+
+/* ── small UI helpers ─────────────────────────────────────────────────── */
+
+let toastTimer = null;
+
+function toast(message, bad = false) {
+  let el = $('toast');
+
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.className = 'toast';
+    document.body.appendChild(el);
+  }
+
+  el.textContent = message;
+  el.className = 'toast show' + (bad ? ' bad' : '');
+
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, bad ? 6000 : 3000);
+}
+
+function showError(host, title, detail) {
+  host.innerHTML =
+    '<div class="err"><h3>' + esc(title) + '</h3><p>' + (detail || '') + '</p></div>';
+}
+
+function openModal(id) {
+  const m = $(id);
+  if (!m) return;
+  m.classList.add('open');
+  const first = m.querySelector('input,select,textarea,button');
+  if (first) setTimeout(() => first.focus(), 30);
+}
+
+function closeModal(id) {
+  const m = $(id);
+  if (m) m.classList.remove('open');
+}
+
+/** Closes any open modal on Escape, and on a click outside the card. */
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') $$('.modal.open').forEach((m) => m.classList.remove('open'));
+});
+
+document.addEventListener('click', (e) => {
+  if (e.target.classList && e.target.classList.contains('modal')) {
+    e.target.classList.remove('open');
+  }
+});
+
+/** Renders a status tag for a dataset. */
+function statusTag(d) {
+  if (d.status === 'importing') return '<span class="tag warn">importing</span>';
+  if (d.status === 'failed') return '<span class="tag bad">failed</span>';
+  if (d.is_protected) return '<span class="tag locked">protected</span>';
+  return '<span class="tag ok">ready</span>';
+}

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#F1561D">
+<title>Sign in · Movenetics Lead Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="centered">
+
+<main class="authcard">
+  <div class="logo"><img src="logo.png" alt="Movenetics Digital"></div>
+
+  <div class="authhead">
+    <h1>Sign in</h1>
+    <p>Lead Search is for Movenetics staff. Ask an administrator if you need an account.</p>
+  </div>
+
+  <div id="status"></div>
+
+  <form class="authform" id="form" autocomplete="on">
+    <label class="field">
+      <span>Email</span>
+      <input id="email" type="email" required autocomplete="username" autofocus>
+    </label>
+    <label class="field">
+      <span>Password</span>
+      <input id="password" type="password" required autocomplete="current-password">
+    </label>
+    <button class="go" type="submit" id="submit">Sign in</button>
+  </form>
+</main>
+
+<script src="app.js"></script>
+<script>
+/**
+ * Where to go after signing in.
+ *
+ * Only same-origin relative paths are honoured — an attacker must not be able
+ * to craft login.html?next=https://elsewhere and have us bounce a freshly
+ * authenticated user off-site.
+ */
+function safeNext() {
+  const raw = new URLSearchParams(location.search).get('next') || 'index.html';
+  const decoded = decodeURIComponent(raw);
+
+  if (!/^[a-z0-9._\-\/]+$/i.test(decoded) || decoded.startsWith('//') || decoded.includes(':')) {
+    return 'index.html';
+  }
+
+  return decoded.replace(/^\/+/, '');
+}
+
+/* Already signed in? Skip the form. */
+(async () => {
+  try {
+    const me = await apiGet('api/auth/me', { noRedirect: true });
+    if (me.authenticated) location.replace(safeNext());
+  } catch (e) { /* stay on the form */ }
+})();
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const btn = $('submit');
+  const status = $('status');
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  status.innerHTML = '';
+
+  try {
+    await apiPost('api/auth/login', {
+      email: $('email').value.trim(),
+      password: $('password').value,
+    }, { noRedirect: true });
+
+    location.href = safeNext();
+  } catch (err) {
+    showError(status, 'Could not sign in', esc(err.message));
+    btn.disabled = false;
+    btn.textContent = 'Sign in';
+    $('password').value = '';
+    $('password').focus();
+  }
+});
+</script>
+</body>
+</html>

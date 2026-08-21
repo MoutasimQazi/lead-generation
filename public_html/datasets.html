@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#F1561D">
+<title>Datasets · Movenetics Lead Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top"><div class="nav" id="nav"></div></header>
+
+  <section class="hero">
+    <h1>Your <span class="accent">datasets</span></h1>
+    <p>Everything uploaded into the database, grouped by folder. Marking one searchable lets the AI query it.</p>
+  </section>
+
+  <div class="toolbar">
+    <input type="search" id="filter" placeholder="Filter by name…" autocomplete="off">
+    <span class="spacer"></span>
+    <button class="btn" id="newFolder" hidden>New folder</button>
+    <a class="btn btn-primary" id="uploadLink" href="upload.html" hidden>Upload files</a>
+  </div>
+
+  <div id="status"></div>
+
+</div>
+
+<!-- ── new folder ─────────────────────────────────────────────────────── -->
+<div class="modal" id="folderModal">
+  <div class="modal-card">
+    <h2>New folder</h2>
+    <p class="sub">Folders group datasets. Uploading several files into one folder lets you append them into a single table when their columns match.</p>
+    <label class="field">
+      <span>Folder name</span>
+      <input id="folderName" type="text" maxlength="120" placeholder="e.g. Oklahoma contractors">
+    </label>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('folderModal')">Cancel</button>
+      <button class="btn btn-primary" id="folderSave">Create folder</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+let datasets = [], folders = [];
+
+(async () => {
+  const user = await requireSession({ page: 'datasets' });
+
+  if (user.is_admin) {
+    $('newFolder').hidden = false;
+    $('uploadLink').hidden = false;
+  }
+
+  await load();
+})();
+
+async function load() {
+  const status = $('status');
+  status.innerHTML = '<div class="loading"><span class="pulse"></span>Loading datasets…</div>';
+
+  try {
+    const [d, f] = await Promise.all([apiGet('api/datasets'), apiGet('api/folders')]);
+    datasets = d.datasets;
+    folders = f.folders;
+    render();
+  } catch (err) {
+    showError(status, 'Could not load datasets', esc(err.message));
+  }
+}
+
+function render() {
+  const status = $('status');
+  const term = $('filter').value.trim().toLowerCase();
+  const visible = term
+    ? datasets.filter(d => d.display_name.toLowerCase().includes(term)
+                        || (d.folder_name || '').toLowerCase().includes(term))
+    : datasets;
+
+  if (!datasets.length) {
+    status.innerHTML =
+      '<div class="empty"><h3>No datasets yet</h3><p>' +
+      (session.user.is_admin
+        ? 'Upload a CSV or spreadsheet to create your first table.'
+        : 'An administrator needs to upload data before it appears here.') +
+      '</p></div>';
+    return;
+  }
+
+  if (!visible.length) {
+    status.innerHTML = '<div class="empty"><h3>Nothing matches “' + esc(term) + '”</h3>' +
+                       '<p>Try a shorter search.</p></div>';
+    return;
+  }
+
+  // Group into folders, with unfiled datasets last so the named groups lead.
+  const groups = new Map();
+  folders.forEach(f => groups.set(f.id, { name: f.name, id: f.id, items: [] }));
+  groups.set(null, { name: 'Unfiled', id: null, items: [] });
+
+  visible.forEach(d => {
+    const key = groups.has(d.folder_id) ? d.folder_id : null;
+    groups.get(key).items.push(d);
+  });
+
+  let html = '';
+
+  for (const g of groups.values()) {
+    if (!g.items.length) continue;
+
+    const rows = g.items.reduce((n, d) => n + d.row_count, 0);
+
+    html +=
+      '<div class="sechead" style="margin-top:22px">' +
+        '<h2>' + esc(g.name) + '</h2>' +
+        '<span class="cbadge">' + g.items.length + '</span>' +
+        '<span class="timing">' + fmt(rows) + ' rows</span>' +
+        '<span class="spacer"></span>' +
+        (g.id !== null && session.user.is_admin
+          ? '<button class="linkbtn" data-delfolder="' + g.id + '">Delete folder</button>' : '') +
+      '</div>' +
+      g.items.map(card).join('');
+  }
+
+  status.innerHTML = html;
+
+  $$('[data-delfolder]').forEach(b =>
+    b.addEventListener('click', () => deleteFolder(Number(b.dataset.delfolder))));
+
+  $$('[data-searchable]').forEach(el =>
+    el.addEventListener('change', () => toggleSearchable(Number(el.dataset.searchable), el.checked)));
+}
+
+function card(d) {
+  const meta = [
+    fmt(d.row_count) + ' rows',
+    d.column_count + ' columns',
+    '<span class="mono">' + esc(d.table_name) + '</span>',
+  ].join(' · ');
+
+  const toggle = session.user.is_admin
+    ? '<label class="switch" title="Let the AI search query this table" onclick="event.stopPropagation()">' +
+        '<input type="checkbox" data-searchable="' + d.id + '"' + (d.is_searchable ? ' checked' : '') +
+        (d.status !== 'ready' ? ' disabled' : '') + '>' +
+        '<span class="track"></span>Searchable</label>'
+    : (d.is_searchable ? '<span class="tag ok">searchable</span>' : '');
+
+  return '<a class="dscard' + (d.is_protected ? ' locked' : '') + '" href="dataset.html?id=' + d.id + '">' +
+    '<span>' +
+      '<span class="title">' + esc(d.display_name) + '</span>' +
+      '<div class="meta-line">' + meta + '</div>' +
+    '</span>' +
+    '<span class="spacer"></span>' +
+    statusTag(d) +
+    toggle +
+  '</a>';
+}
+
+/* ── actions ──────────────────────────────────────────────────────────── */
+
+$('filter').addEventListener('input', render);
+
+$('newFolder').addEventListener('click', () => {
+  $('folderName').value = '';
+  openModal('folderModal');
+});
+
+$('folderSave').addEventListener('click', async () => {
+  const name = $('folderName').value.trim();
+  if (!name) return toast('Give the folder a name.', true);
+
+  try {
+    await apiPost('api/folders', { name });
+    closeModal('folderModal');
+    toast('Folder created.');
+    await load();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+$('folderName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('folderSave').click();
+});
+
+async function toggleSearchable(id, on) {
+  try {
+    await apiPatch('api/datasets/' + id, { is_searchable: on });
+    const d = datasets.find(x => x.id === id);
+    if (d) d.is_searchable = on;
+    toast(on ? 'Now searchable by the AI.' : 'Removed from AI search.');
+  } catch (err) {
+    toast(err.message, true);
+    await load();
+  }
+}
+
+async function deleteFolder(id) {
+  const folder = folders.find(f => f.id === id);
+  if (!folder) return;
+
+  const inside = datasets.filter(d => d.folder_id === id).length;
+  const warning = inside
+    ? '\n\n' + inside + ' dataset' + (inside === 1 ? '' : 's') +
+      ' will become unfiled. The data itself is not deleted.'
+    : '';
+
+  if (!confirm('Delete the folder “' + folder.name + '”?' + warning)) return;
+
+  try {
+    await apiDelete('api/folders/' + id, {});
+    toast('Folder deleted.');
+    await load();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+</script>
+</body>
+</html>

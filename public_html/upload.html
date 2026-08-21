@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#F1561D">
+<title>Upload · Movenetics Lead Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top"><div class="nav" id="nav"></div></header>
+
+  <section class="hero">
+    <h1>Upload <span class="accent">data</span></h1>
+    <p>Drop CSV or Excel files in. We read the columns, you confirm the types, then the rows load into a new table.</p>
+  </section>
+
+  <!-- step 1 ─────────────────────────────────────────────────────────── -->
+  <section id="step-pick">
+    <div class="toolbar">
+      <label class="row" style="gap:8px">
+        <span class="muted" style="font-size:12.5px">Folder</span>
+        <select id="folder"><option value="">No folder</option></select>
+      </label>
+      <button class="btn btn-sm" id="addFolder">New</button>
+    </div>
+
+    <div class="dropzone" id="drop">
+      <h3>Drop files here</h3>
+      <p>or click to choose — .csv, .tsv or .xlsx, up to 20 files at a time</p>
+      <input type="file" id="files" multiple accept=".csv,.tsv,.txt,.xlsx">
+    </div>
+
+    <ul class="filelist" id="chosen"></ul>
+
+    <div class="toolbar" style="margin-top:16px">
+      <span class="spacer"></span>
+      <button class="btn btn-primary" id="analyse" disabled>Read columns</button>
+    </div>
+  </section>
+
+  <!-- step 2 ─────────────────────────────────────────────────────────── -->
+  <section id="step-confirm" hidden></section>
+
+  <!-- step 3 ─────────────────────────────────────────────────────────── -->
+  <section id="step-import" hidden></section>
+
+  <div id="status"></div>
+</div>
+
+<script src="app.js"></script>
+<script>
+/* Types the admin may choose. Kept in step with column_type_assert() on the
+   server — anything not on this list is rejected there anyway. */
+const TYPES = [
+  ['VARCHAR(255)', 'Text (255)'],
+  ['VARCHAR(512)', 'Text (512)'],
+  ['VARCHAR(2000)', 'Text (2000)'],
+  ['TEXT', 'Long text'],
+  ['BIGINT', 'Whole number'],
+  ['DECIMAL(18,4)', 'Decimal'],
+  ['DATE', 'Date'],
+  ['DATETIME', 'Date + time'],
+];
+
+let picked = [], stage = null;
+
+(async () => {
+  await requireSession({ page: 'upload', adminOnly: true });
+  await loadFolders();
+})();
+
+async function loadFolders() {
+  try {
+    const { folders } = await apiGet('api/folders');
+    const sel = $('folder');
+    const keep = sel.value;
+
+    sel.innerHTML = '<option value="">No folder</option>' +
+      folders.map(f => '<option value="' + f.id + '">' + esc(f.name) +
+                       ' (' + f.dataset_count + ')</option>').join('');
+    sel.value = keep;
+  } catch (e) { /* folders are optional */ }
+}
+
+$('addFolder').addEventListener('click', async () => {
+  const name = prompt('Name for the new folder:');
+  if (!name || !name.trim()) return;
+
+  try {
+    const { folder } = await apiPost('api/folders', { name: name.trim() });
+    await loadFolders();
+    $('folder').value = folder.id;
+    toast('Folder created.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+/* ── step 1: choosing files ───────────────────────────────────────────── */
+
+const drop = $('drop');
+
+drop.addEventListener('click', () => $('files').click());
+
+['dragenter', 'dragover'].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('dragging'); }));
+
+['dragleave', 'drop'].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('dragging'); }));
+
+drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+$('files').addEventListener('change', e => addFiles(e.target.files));
+
+function addFiles(list) {
+  for (const f of list) {
+    if (picked.length >= 20) { toast('20 files at a time is the limit.', true); break; }
+    if (!picked.some(p => p.name === f.name && p.size === f.size)) picked.push(f);
+  }
+  renderChosen();
+}
+
+function renderChosen() {
+  $('chosen').innerHTML = picked.map((f, i) =>
+    '<li><span class="name">' + esc(f.name) + '</span>' +
+    '<span class="size">' + bytes(f.size) + '</span>' +
+    '<span class="spacer"></span>' +
+    '<button class="btn btn-sm" data-drop="' + i + '">Remove</button></li>').join('');
+
+  $$('[data-drop]').forEach(b => b.addEventListener('click', () => {
+    picked.splice(Number(b.dataset.drop), 1);
+    renderChosen();
+  }));
+
+  $('analyse').disabled = picked.length === 0;
+}
+
+$('analyse').addEventListener('click', async () => {
+  const btn = $('analyse');
+  btn.disabled = true;
+  btn.textContent = 'Reading…';
+
+  const fd = new FormData();
+  picked.forEach(f => fd.append('files[]', f));
+  if ($('folder').value) fd.append('folder_id', $('folder').value);
+
+  try {
+    stage = await apiPost('api/uploads/stage', fd);
+    renderConfirm();
+  } catch (err) {
+    showError($('status'), 'Could not read those files', esc(err.message));
+    btn.disabled = false;
+    btn.textContent = 'Read columns';
+  }
+});
+
+/* ── step 2: confirming ───────────────────────────────────────────────── */
+
+function renderConfirm() {
+  $('step-pick').hidden = true;
+  $('status').innerHTML = '';
+
+  const host = $('step-confirm');
+  host.hidden = false;
+
+  host.innerHTML =
+    '<div class="sechead"><h2>Check before importing</h2>' +
+      '<span class="cbadge">' + stage.files.length + '</span>' +
+      '<span class="spacer"></span>' +
+      '<button class="linkbtn" id="back">Start over</button></div>' +
+    stage.files.map(fileBlock).join('') +
+    '<div class="toolbar" style="margin-top:20px">' +
+      '<span class="spacer"></span>' +
+      '<button class="btn btn-primary" id="commit">Import into the database</button>' +
+    '</div>';
+
+  $('back').addEventListener('click', () => location.reload());
+  $('commit').addEventListener('click', commit);
+
+  $$('[data-mode]').forEach(sel => sel.addEventListener('change', () => {
+    const i = sel.dataset.mode;
+    const isAppend = sel.value === 'append';
+    $('newopts-' + i).hidden = isAppend;
+    $('cols-' + i).hidden = isAppend;
+    $('appendnote-' + i).hidden = !isAppend;
+  }));
+}
+
+function fileBlock(f) {
+  const i = f.index;
+  const match = f.append_to;
+
+  const modeChooser = match
+    ? '<label class="field"><span>What to do with it</span>' +
+        '<select data-mode="' + i + '" id="mode-' + i + '">' +
+          '<option value="append">Append to “' + esc(match.display_name) + '” (' + fmt(match.row_count) + ' rows)</option>' +
+          '<option value="new">Create a separate new table</option>' +
+        '</select></label>'
+    : '';
+
+  const appendNote = match
+    ? '<div class="notice good" id="appendnote-' + i + '">' +
+        '<strong>Columns match exactly.</strong> These rows will be added to “' +
+        esc(match.display_name) + '”, tagged with this filename so they can be removed again later.' +
+      '</div>'
+    : '';
+
+  const cols =
+    '<div id="cols-' + i + '"' + (match ? ' hidden' : '') + '>' +
+      '<div class="sechead" style="margin-top:18px"><h2>Columns</h2>' +
+        '<span class="cbadge">' + f.columns.length + '</span></div>' +
+      '<div class="tablecard"><div class="scroll"><table><thead><tr>' +
+        '<th>Import</th><th>Column</th><th>Stored as</th><th>Type</th><th>Sample</th><th>Blank</th>' +
+      '</tr></thead><tbody>' +
+      f.columns.map(c =>
+        '<tr>' +
+          '<td><label class="check"><input type="checkbox" checked ' +
+              'data-inc="' + i + '" data-col="' + esc(c.name) + '"></label></td>' +
+          '<td class="name">' + esc(c.label) + '</td>' +
+          '<td class="mono st">' + esc(c.name) + '</td>' +
+          '<td><select data-type="' + i + '" data-col="' + esc(c.name) + '">' +
+            TYPES.map(([v, l]) =>
+              '<option value="' + v + '"' + (v === c.type ? ' selected' : '') + '>' + l + '</option>'
+            ).join('') +
+          '</select></td>' +
+          '<td class="muted" style="font-size:12.5px">' +
+            (c.samples.length ? esc(c.samples.join(' · ').slice(0, 60)) : '<span class="blank">—</span>') +
+          '</td>' +
+          '<td class="mono st">' + c.blank_pct + '%</td>' +
+        '</tr>').join('') +
+      '</tbody></table></div></div>' +
+    '</div>';
+
+  return '<div class="notice" style="margin-top:18px">' +
+      '<div class="row"><strong>' + esc(f.original_name) + '</strong>' +
+        '<span class="tag">' + bytes(f.size) + '</span>' +
+        '<span class="tag">' + fmt(f.est_rows) + ' rows</span>' +
+      '</div>' +
+      '<div style="margin-top:14px">' +
+        modeChooser +
+        appendNote +
+        '<div id="newopts-' + i + '"' + (match ? ' hidden' : '') + '>' +
+          '<label class="field"><span>Dataset name</span>' +
+            '<input type="text" id="name-' + i + '" maxlength="190" value="' + esc(f.display_name) + '"></label>' +
+          '<div class="row"><span class="muted" style="font-size:12.5px">Table: <span class="mono">' +
+            esc(f.table_name) + '</span></span></div>' +
+          '<label class="switch" style="margin-top:12px">' +
+            '<input type="checkbox" id="search-' + i + '"><span class="track"></span>' +
+            'Let the AI search this data</label>' +
+        '</div>' +
+      '</div>' +
+      cols +
+    '</div>';
+}
+
+/* ── step 3: importing ────────────────────────────────────────────────── */
+
+async function commit() {
+  const btn = $('commit');
+  btn.disabled = true;
+  btn.textContent = 'Creating tables…';
+
+  const files = stage.files.map(f => {
+    const i = f.index;
+    const modeSel = $('mode-' + i);
+    const mode = modeSel ? modeSel.value : 'new';
+
+    if (mode === 'append') {
+      return { index: i, mode: 'append', dataset_id: f.append_to.id };
+    }
+
+    return {
+      index: i,
+      mode: 'new',
+      display_name: ($('name-' + i) || {}).value || f.display_name,
+      is_searchable: ($('search-' + i) || {}).checked || false,
+      columns: f.columns.map(c => ({
+        name: c.name,
+        type: document.querySelector('[data-type="' + i + '"][data-col="' + c.name + '"]').value,
+        include: document.querySelector('[data-inc="' + i + '"][data-col="' + c.name + '"]').checked,
+      })),
+    };
+  });
+
+  let result;
+
+  try {
+    result = await apiPost('api/uploads/' + stage.stage_id + '/commit', { files });
+  } catch (err) {
+    showError($('status'), 'Could not start the import', esc(err.message));
+    btn.disabled = false;
+    btn.textContent = 'Import into the database';
+    return;
+  }
+
+  $('step-confirm').hidden = true;
+  runImports(result.datasets);
+}
+
+/**
+ * Drives the chunked import.
+ *
+ * PHP on shared hosting cannot run a background worker, so the browser is the
+ * scheduler: each tick ingests as many rows as fit in one request, and we keep
+ * calling until the server says done. Closing the tab pauses rather than
+ * corrupts — the byte offset is stored server-side and the next visit resumes.
+ */
+async function runImports(datasets) {
+  const host = $('step-import');
+  host.hidden = false;
+
+  host.innerHTML =
+    '<div class="sechead"><h2>Importing</h2>' +
+      '<span class="cbadge">' + datasets.length + '</span></div>' +
+    datasets.map(d =>
+      '<div class="notice" id="imp-' + d.id + '">' +
+        '<div class="row"><strong>' + esc(d.display_name) + '</strong>' +
+          '<span class="tag warn" id="tag-' + d.id + '">starting</span></div>' +
+        '<div class="progress"><div class="bar" id="bar-' + d.id + '"></div></div>' +
+        '<div class="progress-label"><span id="lbl-' + d.id + '">Preparing…</span>' +
+          '<span class="spacer"></span><span class="mono" id="pct-' + d.id + '">0%</span></div>' +
+      '</div>').join('') +
+    '<div class="toolbar" style="margin-top:18px"><span class="spacer"></span>' +
+      '<a class="btn" href="datasets.html">Go to datasets</a>' +
+      '<button class="btn btn-primary" id="again" hidden>Upload more</button></div>';
+
+  $('again').addEventListener('click', () => location.reload());
+
+  let allOk = true;
+
+  for (const d of datasets) {
+    const ok = await pump(d.id);
+    if (!ok) allOk = false;
+  }
+
+  $('again').hidden = false;
+  toast(allOk ? 'Import finished.' : 'Import finished with problems.', !allOk);
+}
+
+async function pump(datasetId) {
+  const bar = $('bar-' + datasetId);
+  const lbl = $('lbl-' + datasetId);
+  const pct = $('pct-' + datasetId);
+  const tag = $('tag-' + datasetId);
+
+  // Guards against an unproductive loop if a slice ever stops making progress.
+  let lastRows = -1, stalled = 0;
+
+  while (true) {
+    let progress;
+
+    try {
+      ({ progress } = await apiPost('api/imports/tick', { dataset_id: datasetId }));
+    } catch (err) {
+      tag.className = 'tag bad';
+      tag.textContent = 'failed';
+      lbl.innerHTML = esc(err.message);
+      return false;
+    }
+
+    bar.style.width = progress.percent + '%';
+    pct.textContent = progress.percent + '%';
+    lbl.textContent = fmt(progress.rows) + ' rows imported';
+
+    if (progress.status === 'failed') {
+      tag.className = 'tag bad';
+      tag.textContent = 'failed';
+      $('imp-' + datasetId).classList.add('bad');
+      lbl.innerHTML = esc(progress.error || 'The import failed.');
+      return false;
+    }
+
+    if (progress.done) {
+      tag.className = 'tag ok';
+      tag.textContent = 'ready';
+      $('imp-' + datasetId).classList.add('good');
+      bar.style.width = '100%';
+      pct.textContent = '100%';
+
+      lbl.innerHTML = fmt(progress.rows) + ' rows imported' +
+        (progress.truncated
+          ? ' · <span class="muted">' + fmt(progress.truncated) +
+            ' long value(s) were shortened to fit their column</span>'
+          : '');
+
+      return true;
+    }
+
+    if (progress.rows === lastRows) {
+      if (++stalled >= 3) {
+        tag.className = 'tag bad';
+        tag.textContent = 'stalled';
+        lbl.textContent = 'The import stopped making progress. Reopen this dataset to resume.';
+        return false;
+      }
+    } else {
+      stalled = 0;
+      lastRows = progress.rows;
+    }
+  }
+}
+</script>
+</body>
+</html>

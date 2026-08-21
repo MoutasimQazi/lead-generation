@@ -1,0 +1,61 @@
+# ── Movenetics Lead Search ────────────────────────────────────────────────
+# Contents of this folder go in the cPanel document root (public_html).
+# The app/ folder belongs OUTSIDE the document root — see DEPLOY.md.
+
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # 1. HTTPS first. Sessions are issued with the Secure flag over TLS, so this
+  #    has to happen before anything touches a cookie.
+  #    Comment out until the certificate is issued, or you will lock yourself out.
+  RewriteCond %{HTTPS} off
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+  # 2. Refuse app internals outright, in case they are ever copied in here.
+  RewriteRule ^(app|var|vendor)/ - [F,L]
+
+  # 3. Everything under /api/ goes to the PHP front controller.
+  #    Static pages are untouched and served directly by Apache.
+  RewriteRule ^api/ index.php [QSA,L]
+</IfModule>
+
+# Never serve .env, whatever it is named or wherever it ends up.
+<FilesMatch "^\.env">
+  Require all denied
+</FilesMatch>
+
+# setup.php locks itself once an admin account exists, but delete it after the
+# first run regardless. Uncomment to block it outright:
+# <Files "setup.php">
+#   Require all denied
+# </Files>
+
+# ── Security headers ──────────────────────────────────────────────────────
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "same-origin"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+
+  # Google Fonts is the only external origin these pages use. Everything else
+  # is same-origin, so a stray script or tracker simply will not load.
+  # 'unsafe-inline' is present for style-src only: the pages carry a few inline
+  # style attributes. Scripts are strictly same-origin files.
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
+
+  # An authenticated page must not sit in a shared cache.
+  <FilesMatch "\.(html|php)$">
+    Header always set Cache-Control "no-store, must-revalidate"
+  </FilesMatch>
+
+  <FilesMatch "\.(css|js|png|svg|woff2)$">
+    Header always set Cache-Control "public, max-age=3600"
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json
+</IfModule>

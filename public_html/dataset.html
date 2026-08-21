@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#F1561D">
+<title>Dataset · Movenetics Lead Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top"><div class="nav" id="nav"></div></header>
+
+  <section class="hero" id="head"></section>
+
+  <div id="banner"></div>
+
+  <div class="toolbar" id="tools" hidden>
+    <input type="search" id="q" placeholder="Search this dataset…" autocomplete="off">
+    <select id="per">
+      <option value="25">25 rows</option>
+      <option value="50" selected>50 rows</option>
+      <option value="100">100 rows</option>
+      <option value="200">200 rows</option>
+    </select>
+    <span class="spacer"></span>
+    <button class="btn" id="schemaBtn" hidden>Columns</button>
+    <button class="btn" id="filesBtn" hidden>Source files</button>
+    <button class="btn" id="settingsBtn" hidden>Settings</button>
+    <a class="btn btn-primary" id="exportBtn" href="#">Export CSV</a>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<!-- ── settings ───────────────────────────────────────────────────────── -->
+<div class="modal" id="settingsModal">
+  <div class="modal-card">
+    <h2>Dataset settings</h2>
+    <p class="sub" id="settingsSub"></p>
+
+    <label class="field"><span>Name</span>
+      <input type="text" id="setName" maxlength="190"></label>
+
+    <label class="field"><span>Folder</span>
+      <select id="setFolder"></select></label>
+
+    <label class="switch" style="margin:4px 0 18px">
+      <input type="checkbox" id="setSearchable"><span class="track"></span>
+      Let the AI search this data</label>
+
+    <div class="notice bad">
+      <strong>Delete this dataset</strong>
+      <p style="margin:6px 0 10px;font-size:13px">Drops the table and every row in it. This cannot be undone.</p>
+      <input type="text" id="delConfirm" placeholder="Type the dataset name to confirm"
+             style="width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;background:var(--card);color:var(--ink)">
+      <button class="btn btn-danger btn-sm" id="delBtn" style="margin-top:10px">Delete permanently</button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('settingsModal')">Cancel</button>
+      <button class="btn btn-primary" id="settingsSave">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── columns ────────────────────────────────────────────────────────── -->
+<div class="modal" id="schemaModal">
+  <div class="modal-card wide">
+    <h2>Columns</h2>
+    <p class="sub">Renaming rewrites the column in the table. Retyping is checked first — if any value would not survive the conversion, the change is refused.</p>
+    <div id="schemaBody"></div>
+    <div class="modal-actions">
+      <button class="btn" id="addColBtn">Add column</button>
+      <span class="spacer"></span>
+      <button class="btn btn-primary" onclick="closeModal('schemaModal')">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── source files ───────────────────────────────────────────────────── -->
+<div class="modal" id="filesModal">
+  <div class="modal-card">
+    <h2>Source files</h2>
+    <p class="sub">Every row records the file it came from, so a file appended by mistake can be taken back out.</p>
+    <div id="filesBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="closeModal('filesModal')">Done</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const id = Number(new URLSearchParams(location.search).get('id') || 0);
+
+let ds = null, columns = [], page = 1, per = 50, term = '', sort = '', dir = 'asc';
+let canEdit = false;
+
+(async () => {
+  const user = await requireSession({ page: 'datasets' });
+
+  if (!id) {
+    showError($('status'), 'No dataset selected', 'Go back to <a href="datasets.html">Datasets</a>.');
+    return;
+  }
+
+  await loadDataset();
+
+  if (ds && ds.status === 'importing') {
+    resumeImport();
+  }
+})();
+
+async function loadDataset() {
+  try {
+    const data = await apiGet('api/datasets/' + id);
+    ds = data.dataset;
+    columns = ds.columns || [];
+    canEdit = session.user.is_admin && !ds.is_protected;
+
+    renderHead();
+
+    if (ds.status === 'ready') await loadRows();
+  } catch (err) {
+    showError($('status'), 'Could not open that dataset', esc(err.message));
+  }
+}
+
+function renderHead() {
+  $('head').innerHTML =
+    '<h1>' + esc(ds.display_name) + '</h1>' +
+    '<p><a href="datasets.html">← All datasets</a>' +
+      (ds.folder_id ? ' · in a folder' : '') +
+      ' · <span class="mono">' + esc(ds.table_name) + '</span></p>' +
+    '<dl class="kv" style="margin-top:18px">' +
+      '<div><dt>Rows</dt><dd>' + fmt(ds.row_count) + '</dd></div>' +
+      '<div><dt>Columns</dt><dd>' + columns.length + '</dd></div>' +
+      '<div><dt>Status</dt><dd style="font-size:13px;padding-top:4px">' + statusTag(ds) + '</dd></div>' +
+      '<div><dt>AI search</dt><dd style="font-size:13px;padding-top:4px">' +
+        (ds.is_searchable ? '<span class="tag ok">on</span>' : '<span class="tag">off</span>') +
+      '</dd></div>' +
+    '</dl>';
+
+  $('tools').hidden = false;
+  $('exportBtn').href = 'api/datasets/' + id + '/export';
+
+  if (session.user.is_admin) {
+    $('settingsBtn').hidden = false;
+    $('filesBtn').hidden = ds.is_protected;
+    $('schemaBtn').hidden = !canEdit;
+  }
+
+  if (ds.is_protected) {
+    $('banner').innerHTML =
+      '<div class="notice"><strong>This is the master leads table.</strong> ' +
+      'It can be searched and exported, but not edited or deleted here — that keeps ' +
+      'the source data safe from accidents.</div>';
+  } else if (ds.status === 'failed') {
+    $('banner').innerHTML =
+      '<div class="notice bad"><strong>The last import failed.</strong> ' +
+      esc(ds.error_message || '') + '</div>';
+  }
+}
+
+/* ── rows ─────────────────────────────────────────────────────────────── */
+
+async function loadRows() {
+  const status = $('status');
+
+  if (!columns.length) {
+    status.innerHTML = '<div class="empty"><h3>This dataset has no columns</h3></div>';
+    return;
+  }
+
+  status.innerHTML = '<div class="loading"><span class="pulse"></span>Loading rows…</div>';
+
+  const params = new URLSearchParams({ page, per, q: term, sort, dir });
+
+  let data;
+  try {
+    data = await apiGet('api/datasets/' + id + '/rows?' + params);
+  } catch (err) {
+    return showError(status, 'Could not load rows', esc(err.message));
+  }
+
+  if (!data.rows.length) {
+    status.innerHTML = '<div class="empty"><h3>' +
+      (term ? 'Nothing matches “' + esc(term) + '”' : 'No rows yet') + '</h3>' +
+      '<p>' + (term ? 'Try a shorter search.' : 'This table is empty.') + '</p></div>';
+    return;
+  }
+
+  const head = columns.map(c =>
+    '<th><button class="linkbtn" data-sort="' + esc(c.name) + '" ' +
+      'style="color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit">' +
+      esc(c.label || c.name) +
+      (sort === c.name ? (dir === 'asc' ? ' ▲' : ' ▼') : '') +
+    '</button></th>').join('');
+
+  status.innerHTML =
+    '<div class="sechead"><h2>Rows</h2><span class="cbadge">' + fmt(data.total) + '</span>' +
+      '<span class="spacer"></span>' +
+      (canEdit ? '<button class="linkbtn" id="addRow">Add row</button>' : '') +
+    '</div>' +
+    '<div class="tablecard"><div class="scroll"><table>' +
+      '<thead><tr>' + head + (canEdit ? '<th></th>' : '') + '</tr></thead>' +
+      '<tbody>' + data.rows.map(rowHtml).join('') + '</tbody>' +
+    '</table></div><div class="pager" id="pager"></div></div>' +
+    (canEdit ? '<p class="muted" style="margin-top:10px;font-size:12.5px">Click any cell to edit it. ' +
+               'Enter saves, Escape cancels.</p>' : '');
+
+  renderPager(data);
+  wireRows();
+}
+
+function rowHtml(r) {
+  const cells = columns.map(c => {
+    const v = r[c.name];
+    const shown = (v === null || v === undefined || v === '')
+      ? '<span class="blank">—</span>' : esc(v);
+
+    return '<td' + (canEdit ? ' class="editable" data-row="' + r._row_id + '" data-col="' + esc(c.name) + '"' : '') +
+           '>' + shown + '</td>';
+  }).join('');
+
+  const actions = canEdit
+    ? '<td><button class="btn btn-sm btn-danger" data-del="' + r._row_id + '">Delete</button></td>'
+    : '';
+
+  return '<tr class="rowactions">' + cells + actions + '</tr>';
+}
+
+function renderPager(data) {
+  $('pager').innerHTML =
+    '<span class="range mono">' + fmt((data.page - 1) * data.per + 1) + '–' +
+      fmt(Math.min(data.page * data.per, data.total)) + ' of ' + fmt(data.total) + '</span>' +
+    '<span class="spacer"></span>' +
+    '<button class="pg" id="prev"' + (data.page <= 1 ? ' disabled' : '') + '>Previous</button>' +
+    '<span class="range mono">' + data.page + ' / ' + data.pages + '</span>' +
+    '<button class="pg" id="next"' + (data.page >= data.pages ? ' disabled' : '') + '>Next</button>';
+
+  $('prev').addEventListener('click', () => { if (page > 1) { page--; loadRows(); } });
+  $('next').addEventListener('click', () => { if (page < data.pages) { page++; loadRows(); } });
+}
+
+function wireRows() {
+  $$('[data-sort]').forEach(b => b.addEventListener('click', () => {
+    const col = b.dataset.sort;
+    if (sort === col) dir = dir === 'asc' ? 'desc' : 'asc';
+    else { sort = col; dir = 'asc'; }
+    page = 1;
+    loadRows();
+  }));
+
+  if (!canEdit) return;
+
+  $$('td.editable').forEach(td => td.addEventListener('click', () => editCell(td)));
+  $$('[data-del]').forEach(b => b.addEventListener('click', () => deleteRow(Number(b.dataset.del))));
+
+  const add = $('addRow');
+  if (add) add.addEventListener('click', addRow);
+}
+
+/** Turns a cell into an input, saves on Enter or blur, restores on Escape. */
+function editCell(td) {
+  if (td.classList.contains('editing')) return;
+
+  const original = td.textContent === '—' ? '' : td.textContent;
+  const rowId = td.dataset.row;
+  const col = td.dataset.col;
+
+  td.classList.add('editing');
+  td.innerHTML = '<input type="text" value="' + esc(original) + '">';
+
+  const input = td.querySelector('input');
+  input.focus();
+  input.select();
+
+  let settled = false;
+
+  const restore = (text) => {
+    td.classList.remove('editing', 'saving');
+    td.innerHTML = (text === '' || text === null)
+      ? '<span class="blank">—</span>' : esc(text);
+  };
+
+  const save = async () => {
+    if (settled) return;
+    settled = true;
+
+    const value = input.value;
+
+    if (value === original) return restore(original);
+
+    td.classList.add('saving');
+
+    try {
+      await apiPatch('api/datasets/' + id + '/rows/' + rowId, { values: { [col]: value } });
+      restore(value);
+      toast('Saved.');
+    } catch (err) {
+      restore(original);
+      toast(err.message, true);
+    }
+  };
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { settled = true; restore(original); }
+  });
+
+  input.addEventListener('blur', save);
+}
+
+async function deleteRow(rowId) {
+  if (!confirm('Delete this row? This cannot be undone.')) return;
+
+  try {
+    await apiDelete('api/datasets/' + id + '/rows/' + rowId, {});
+    toast('Row deleted.');
+    await loadDataset();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function addRow() {
+  const values = {};
+  const first = columns[0];
+  const v = prompt('Value for “' + (first.label || first.name) + '” (you can fill the rest by clicking cells):');
+
+  if (v === null) return;
+  values[first.name] = v;
+
+  try {
+    await apiPost('api/datasets/' + id + '/rows', { values });
+    toast('Row added.');
+    await loadDataset();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+/* ── toolbar ──────────────────────────────────────────────────────────── */
+
+let searchTimer = null;
+
+$('q').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { term = e.target.value.trim(); page = 1; loadRows(); }, 300);
+});
+
+$('per').addEventListener('change', e => { per = Number(e.target.value); page = 1; loadRows(); });
+
+/* ── settings ─────────────────────────────────────────────────────────── */
+
+$('settingsBtn').addEventListener('click', async () => {
+  $('settingsSub').textContent = ds.is_protected
+    ? 'This dataset is protected, so only its search setting can be changed.'
+    : 'Renaming affects only the label — the underlying table keeps its name.';
+
+  $('setName').value = ds.display_name;
+  $('setName').disabled = ds.is_protected;
+  $('setSearchable').checked = ds.is_searchable;
+  $('delBtn').disabled = ds.is_protected;
+  $('delConfirm').disabled = ds.is_protected;
+  $('setFolder').disabled = ds.is_protected;
+
+  try {
+    const { folders } = await apiGet('api/folders');
+    $('setFolder').innerHTML = '<option value="">No folder</option>' +
+      folders.map(f => '<option value="' + f.id + '"' +
+        (f.id === ds.folder_id ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('');
+  } catch (e) { /* keep whatever is there */ }
+
+  openModal('settingsModal');
+});
+
+$('settingsSave').addEventListener('click', async () => {
+  const body = { is_searchable: $('setSearchable').checked };
+
+  if (!ds.is_protected) {
+    body.display_name = $('setName').value.trim();
+    body.folder_id = $('setFolder').value ? Number($('setFolder').value) : null;
+  }
+
+  try {
+    await apiPatch('api/datasets/' + id, body);
+    closeModal('settingsModal');
+    toast('Saved.');
+    await loadDataset();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+$('delBtn').addEventListener('click', async () => {
+  const typed = $('delConfirm').value;
+
+  if (typed !== ds.display_name) {
+    return toast('Type the dataset name exactly to confirm.', true);
+  }
+
+  try {
+    await apiDelete('api/datasets/' + id, { confirm: typed });
+    location.href = 'datasets.html';
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+/* ── schema ───────────────────────────────────────────────────────────── */
+
+const TYPES = [
+  ['VARCHAR(255)', 'Text (255)'], ['VARCHAR(512)', 'Text (512)'],
+  ['VARCHAR(2000)', 'Text (2000)'], ['TEXT', 'Long text'],
+  ['BIGINT', 'Whole number'], ['DECIMAL(18,4)', 'Decimal'],
+  ['DATE', 'Date'], ['DATETIME', 'Date + time'],
+];
+
+$('schemaBtn').addEventListener('click', () => { renderSchema(); openModal('schemaModal'); });
+
+function renderSchema() {
+  $('schemaBody').innerHTML =
+    '<div class="tablecard"><div class="scroll"><table><thead><tr>' +
+      '<th>Name</th><th>Type</th><th></th>' +
+    '</tr></thead><tbody>' +
+    columns.map(c =>
+      '<tr>' +
+        '<td><input type="text" value="' + esc(c.label || c.name) + '" data-lbl="' + esc(c.name) + '" ' +
+          'style="width:100%;border:1px solid var(--line);border-radius:6px;padding:7px 9px;' +
+          'font-size:13px;background:var(--card);color:var(--ink)">' +
+          '<div class="mono muted" style="font-size:11px;margin-top:4px">' + esc(c.name) + '</div></td>' +
+        '<td><select data-ctype="' + esc(c.name) + '">' +
+          TYPES.map(([v, l]) => '<option value="' + v + '"' +
+            (v === c.type ? ' selected' : '') + '>' + l + '</option>').join('') +
+        '</select></td>' +
+        '<td style="white-space:nowrap">' +
+          '<button class="btn btn-sm" data-savecol="' + esc(c.name) + '">Save</button> ' +
+          '<button class="btn btn-sm btn-danger" data-dropcol="' + esc(c.name) + '">Drop</button>' +
+        '</td>' +
+      '</tr>').join('') +
+    '</tbody></table></div></div>';
+
+  $$('[data-savecol]').forEach(b => b.addEventListener('click', () => saveColumn(b.dataset.savecol)));
+  $$('[data-dropcol]').forEach(b => b.addEventListener('click', () => dropColumn(b.dataset.dropcol)));
+}
+
+async function saveColumn(name) {
+  const label = document.querySelector('[data-lbl="' + name + '"]').value.trim();
+  const type = document.querySelector('[data-ctype="' + name + '"]').value;
+
+  if (!label) return toast('The column needs a name.', true);
+
+  try {
+    await apiPatch('api/datasets/' + id + '/columns/' + name, { label, type });
+    toast('Column updated.');
+    await loadDataset();
+    renderSchema();
+  } catch (err) {
+    // A refused retype reports how many values would be destroyed; offer the
+    // override rather than making the admin guess what to do next.
+    if (err.status === 409 && err.data && err.data.uncastable) {
+      const go = confirm(err.message + '\n\nConvert anyway and lose those ' +
+                         fmt(err.data.uncastable) + ' value(s)?');
+      if (!go) return;
+
+      try {
+        await apiPatch('api/datasets/' + id + '/columns/' + name, { label, type, force: true });
+        toast('Column converted.');
+        await loadDataset();
+        renderSchema();
+      } catch (e2) {
+        toast(e2.message, true);
+      }
+      return;
+    }
+
+    toast(err.message, true);
+  }
+}
+
+async function dropColumn(name) {
+  if (!confirm('Drop the column “' + name + '” and everything in it? This cannot be undone.')) return;
+
+  try {
+    await apiDelete('api/datasets/' + id + '/columns/' + name, {});
+    toast('Column dropped.');
+    await loadDataset();
+    renderSchema();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+$('addColBtn').addEventListener('click', async () => {
+  const label = prompt('Name for the new column:');
+  if (!label || !label.trim()) return;
+
+  try {
+    await apiPost('api/datasets/' + id + '/columns', { label: label.trim(), type: 'VARCHAR(255)' });
+    toast('Column added.');
+    await loadDataset();
+    renderSchema();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+/* ── source files ─────────────────────────────────────────────────────── */
+
+$('filesBtn').addEventListener('click', () => {
+  const files = ds.files || [];
+
+  $('filesBody').innerHTML = files.length
+    ? '<ul class="filelist">' + files.map(f =>
+        '<li><span class="name">' + esc(f.filename) + '</span>' +
+        '<span class="spacer"></span>' +
+        '<span class="size">' + esc((f.uploaded_at || '').slice(0, 10)) + '</span>' +
+        (canEdit && files.length > 0
+          ? ' <button class="btn btn-sm btn-danger" data-delfile="' + esc(f.filename) + '">Remove rows</button>'
+          : '') +
+        '</li>').join('') + '</ul>'
+    : '<p class="muted">No source files recorded for this dataset.</p>';
+
+  $$('[data-delfile]').forEach(b =>
+    b.addEventListener('click', () => removeFile(b.dataset.delfile)));
+
+  openModal('filesModal');
+});
+
+async function removeFile(filename) {
+  if (!confirm('Delete every row that came from “' + filename + '”?\n\nThis cannot be undone.')) return;
+
+  try {
+    const res = await apiDelete('api/datasets/' + id + '/rows', { source_file: filename });
+    closeModal('filesModal');
+    toast(fmt(res.deleted) + ' rows removed.');
+    await loadDataset();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+/* ── resuming a stalled import ────────────────────────────────────────── */
+
+/**
+ * An import that was interrupted (tab closed, request timed out) is left with
+ * a stored byte offset. Opening the dataset picks it up from there.
+ */
+async function resumeImport() {
+  $('banner').innerHTML =
+    '<div class="notice"><strong>Import in progress.</strong> ' +
+      'Leaving this page pauses it; reopening resumes from where it stopped.' +
+      '<div class="progress"><div class="bar" id="rbar"></div></div>' +
+      '<div class="progress-label"><span id="rlbl">Resuming…</span>' +
+        '<span class="spacer"></span><span class="mono" id="rpct">0%</span></div>' +
+    '</div>';
+
+  if (!session.user.is_admin) {
+    $('rlbl').textContent = 'An administrator needs to open this page to finish the import.';
+    return;
+  }
+
+  while (true) {
+    let progress;
+
+    try {
+      ({ progress } = await apiPost('api/imports/tick', { dataset_id: id }));
+    } catch (err) {
+      $('rlbl').textContent = err.message;
+      return;
+    }
+
+    $('rbar').style.width = progress.percent + '%';
+    $('rpct').textContent = progress.percent + '%';
+    $('rlbl').textContent = fmt(progress.rows) + ' rows imported';
+
+    if (progress.done) {
+      $('banner').innerHTML = '';
+      toast(progress.status === 'ready' ? 'Import finished.' : 'Import failed.',
+            progress.status !== 'ready');
+      await loadDataset();
+      return;
+    }
+  }
+}
+</script>
+</body>
+</html>
