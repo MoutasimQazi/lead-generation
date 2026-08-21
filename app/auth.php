@@ -110,10 +110,16 @@ function require_admin(): array
 
 function login_attempts_recent(string $ip): int
 {
+    // The window is interpolated, not bound: MariaDB is inconsistent about
+    // accepting a placeholder as an INTERVAL operand under native prepared
+    // statements, and a throw here would 500 every single login attempt.
+    // LOGIN_WINDOW_MINUTES is a code constant, so there is no injection surface.
+    $window = (int) LOGIN_WINDOW_MINUTES;
+
     return (int) db_value(
         'SELECT COUNT(*) FROM login_attempts
-          WHERE ip = ? AND attempted_at > (NOW() - INTERVAL ? MINUTE)',
-        [$ip, LOGIN_WINDOW_MINUTES],
+          WHERE ip = ? AND attempted_at > (NOW() - INTERVAL ' . $window . ' MINUTE)',
+        [$ip],
         0
     );
 }

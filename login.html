@@ -45,14 +45,27 @@
  * authenticated user off-site.
  */
 function safeNext() {
-  const raw = new URLSearchParams(location.search).get('next') || 'index.html';
-  const decoded = decodeURIComponent(raw);
+  const raw = new URLSearchParams(location.search).get('next') || '';
 
-  if (!/^[a-z0-9._\-\/]+$/i.test(decoded) || decoded.startsWith('//') || decoded.includes(':')) {
-    return 'index.html';
+  let target;
+  try {
+    target = decodeURIComponent(raw);
+  } catch (e) {
+    return 'index.html';                 // malformed %-escape
   }
 
-  return decoded.replace(/^\/+/, '');
+  target = target.replace(/^\/+/, '');   // "/index.html" -> "index.html"
+
+  const usable =
+    target !== '' &&                                  // "/" decoded to nothing
+    /^[A-Za-z0-9._\-/?=&%]+$/.test(target) &&         // no scheme, no host, no spaces
+    !target.includes(':') &&
+    !target.startsWith('//') &&
+    !target.split('?')[0].endsWith('login.html');     // never bounce back here
+
+  // Anything unusable falls back to the app rather than to an empty string:
+  // location.href = '' reloads the current page, which is this login form.
+  return usable ? target : 'index.html';
 }
 
 /* Already signed in? Skip the form. */

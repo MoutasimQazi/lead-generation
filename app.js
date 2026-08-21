@@ -10,6 +10,34 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 /** Session state, filled by requireSession(). */
 const session = { user: null, csrf: null };
 
+/**
+ * URL of the login page, carrying where to come back to.
+ *
+ * Only the basename is passed, never location.pathname. A pathname of "/"
+ * (the site root, served as index.html by DirectoryIndex) used to round-trip
+ * to an empty string, and `location.href = ''` reloads the current page — so
+ * signing in from the root landed the user back on the login form every time.
+ */
+function loginUrl() {
+  const here = location.pathname.replace(/^.*\//, '');
+
+  if (here === '' || here === 'login.html') return 'login.html';
+
+  return 'login.html?next=' + encodeURIComponent(here + location.search);
+}
+
+/** Full-page error, for failures that leave the page with nothing to show. */
+function fatal(title, detail) {
+  const host = $('status') || document.body;
+
+  host.innerHTML =
+    '<div class="err" style="margin:24px auto;max-width:560px">' +
+      '<h3>' + esc(title) + '</h3>' +
+      '<p>' + esc(detail || '') + '</p>' +
+      '<p style="margin-top:12px"><a href="login.html">Go to sign in</a></p>' +
+    '</div>';
+}
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (m) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
@@ -60,8 +88,7 @@ async function api(method, path, body, opts = {}) {
 
   // Session gone or expired: bounce to login, preserving where they were.
   if (res.status === 401 && !opts.noRedirect) {
-    const back = encodeURIComponent(location.pathname + location.search);
-    location.href = 'login.html?next=' + back;
+    location.href = loginUrl();
     throw new Error('Signed out.');
   }
 
@@ -105,13 +132,16 @@ async function requireSession({ page = '', adminOnly = false } = {}) {
   try {
     data = await apiGet('api/auth/me', { noRedirect: true });
   } catch (e) {
-    location.href = 'login.html';
+    // A throw here is a server fault, not a signed-out session: /api/auth/me
+    // answers 200 with authenticated:false when nobody is signed in. Bouncing
+    // to login on a 500 would ping-pong between the login page and the app
+    // forever while hiding the error that actually needs fixing.
+    fatal('Cannot reach the server', e.message);
     throw e;
   }
 
   if (!data.authenticated) {
-    const back = encodeURIComponent(location.pathname + location.search);
-    location.href = 'login.html?next=' + back;
+    location.href = loginUrl();
     throw new Error('Not signed in.');
   }
 

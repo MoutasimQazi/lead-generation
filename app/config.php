@@ -100,11 +100,59 @@ function config(?string $key = null, mixed $default = null): mixed
     return array_key_exists($key, $cfg) ? $cfg[$key] : $default;
 }
 
+/**
+ * Built-in settings.
+ *
+ * These are the live values, so the app runs with no .env file at all — which
+ * is what makes deployment on cPanel a straight file copy.
+ *
+ * A .env file, or a real environment variable, still overrides anything here
+ * (see $get below), so a different install does not need this file edited.
+ *
+ * ── Two consequences worth knowing ──────────────────────────────────────────
+ *  1. The database password is in source control. This repo has a GitHub
+ *     remote, so the repository must be PRIVATE. If it is public, or ever was,
+ *     treat this password as compromised and rotate it.
+ *  2. app/ must stay unreachable from the web. It ships with a deny-all
+ *     .htaccess, and the site root .htaccess blocks app/ as well. PHP files are
+ *     executed rather than shown, so a working server does not reveal this —
+ *     but a server with PHP misconfigured would serve it as plain text.
+ */
+const BUILTIN_CONFIG = [
+    'APP_ENV'  => 'production',
+    'APP_URL'  => 'https://lead.moveneticsdigital.com',
+
+    'DB_HOST'     => 'localhost',
+    'DB_PORT'     => '3306',
+    'DB_NAME'     => 'movenetics_lead',
+    'DB_USER'     => 'movenetics_moutasim',
+    'DB_PASSWORD' => '@Iv+rUv_^$EeSm[Q',
+
+    // Name of the pre-existing leads table. Blank if it does not exist yet.
+    'LEADS_TABLE' => 'leads',
+
+    // Signs the session cookie. Changing it signs everyone out.
+    'SESSION_SECRET' => '9d12bc3c676fde3543b46e389a6a1c58ee8a868d8401fdc76281e76ce6d707194ad28b84aa68691df6ccbd10ee1de681',
+    'SESSION_HOURS'  => '12',
+
+    'N8N_WEBHOOK_URL'     => 'https://n8n.moveneticsdigital.com/webhook/lead-search',
+    'N8N_API_KEY'         => '',
+    'N8N_TIMEOUT_SECONDS' => '120',
+
+    'UPLOAD_DIR'              => './var/uploads',
+    'MAX_UPLOAD_MB'           => '250',
+    'IMPORT_BATCH_SIZE'       => '500',
+    'IMPORT_ROWS_PER_REQUEST' => '20000',
+    'INFER_SAMPLE_ROWS'       => '500',
+];
+
 function build_config(): array
 {
     $env = parse_env_file(app_root() . '/.env');
 
-    // Real environment variables win, so cPanel's UI or a systemd unit can override.
+    // Precedence: real environment variable, then .env, then the built-in value.
+    // Nothing is "required" any more — the built-ins always answer — so a
+    // missing .env is not an error, just the default install.
     $get = static function (string $k, ?string $fallback = null) use ($env): ?string {
         $v = getenv($k);
         if ($v !== false && $v !== '') {
@@ -113,27 +161,14 @@ function build_config(): array
         if (isset($env[$k]) && $env[$k] !== '') {
             return $env[$k];
         }
+        if (isset(BUILTIN_CONFIG[$k]) && BUILTIN_CONFIG[$k] !== '') {
+            return BUILTIN_CONFIG[$k];
+        }
         return $fallback;
     };
 
-    $required = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'SESSION_SECRET'];
-    $missing  = [];
-    foreach ($required as $k) {
-        if ($get($k) === null) {
-            $missing[] = $k;
-        }
-    }
-
-    if ($missing) {
-        // Reported all at once — fixing these one round-trip at a time on a
-        // shared host is miserable.
-        throw new RuntimeException(
-            'Missing required settings in .env: ' . implode(', ', $missing) .
-            '. Copy .env.example to .env and fill it in.'
-        );
-    }
-
     $secret = (string) $get('SESSION_SECRET');
+
     if (strlen($secret) < 32) {
         throw new RuntimeException(
             'SESSION_SECRET must be at least 32 characters. Generate one with: ' .

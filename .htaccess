@@ -14,9 +14,14 @@ DirectoryIndex index.html
 
   # 1. HTTPS first — session cookies are issued Secure over TLS.
   #    Comment out only if the certificate is not issued yet.
+  #
+  #    308, not 301: a 301 makes browsers re-issue the request as GET and throw
+  #    the body away. Every login POST arriving over HTTP would turn into
+  #    GET /api/auth/login and fail with "does not accept GET requests".
+  #    308 preserves both the method and the body.
   RewriteCond %{HTTPS} off
   RewriteCond %{HTTP:X-Forwarded-Proto} !=https
-  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=308,L]
 
   # 2. Application internals are never served, at any depth.
   RewriteRule ^(app|var|vendor|tests)(/|$) - [F,L]
