@@ -62,12 +62,47 @@ function renderHead() {
   $('tools').hidden = false;
   $('exportBtn').href = 'api/datasets/' + id + '/export';
 
+  if (session.user.is_admin) {
+    $('settingsBtn').hidden = false;
+    $('settingsSub').textContent = ds.is_protected
+      ? 'This dataset is protected and cannot be deleted.'
+      : 'Deleting removes this dataset and all of its rows permanently.';
+    $('delConfirm').disabled = ds.is_protected;
+    $('delBtn').disabled = ds.is_protected;
+  }
+
   if (ds.is_protected) {
     $('banner').innerHTML =
       '<div class="notice"><strong>This is the master leads table.</strong> ' +
       'It can be searched and exported, but not edited or deleted here.</div>';
   }
 }
+
+$('settingsBtn').addEventListener('click', () => {
+  if (!ds) return;
+  $('delConfirm').value = '';
+  openModal('settingsModal');
+});
+
+$('delBtn').addEventListener('click', async () => {
+  if (!ds || ds.is_protected) return;
+
+  const typed = $('delConfirm').value.trim();
+  if (typed !== ds.display_name) {
+    return toast('Type the dataset name exactly to confirm.', true);
+  }
+
+  if (!confirm('Delete "' + ds.display_name + '" and all of its rows? This cannot be undone.')) {
+    return;
+  }
+
+  try {
+    await apiDelete('api/datasets/' + id, { confirm: typed });
+    location.href = 'datasets.html';
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
 
 async function loadRows() {
   if (!columns.length) {
