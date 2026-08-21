@@ -181,6 +181,18 @@ function build_config(): array
         $uploadDir = app_root() . '/' . ltrim($uploadDir, './');
     }
 
+    // Compatibility migration: older deployments commonly still have the
+    // original endpoint in .env. Environment values outrank BUILTIN_CONFIG,
+    // so changing only the built-in URL would leave production calling an
+    // unregistered webhook forever. Keep custom URLs untouched, but advance
+    // this one known legacy path to the imported v2 workflow automatically.
+    $n8nUrl = trim((string) $get('N8N_WEBHOOK_URL', ''));
+    $n8nUrl = preg_replace(
+        '~(/webhook(?:-test)?/lead-search)/?$~',
+        '$1-v2',
+        $n8nUrl
+    ) ?? $n8nUrl;
+
     return [
         'app_env'  => $get('APP_ENV', 'production'),
         'app_url'  => rtrim((string) $get('APP_URL', ''), '/'),
@@ -196,7 +208,7 @@ function build_config(): array
         'session_secret' => $secret,
         'session_hours'  => max(1, (int) $get('SESSION_HOURS', '12')),
 
-        'n8n_url'     => (string) $get('N8N_WEBHOOK_URL', ''),
+        'n8n_url'     => $n8nUrl,
         'n8n_key'     => (string) $get('N8N_API_KEY', ''),
         'n8n_timeout' => max(5, (int) $get('N8N_TIMEOUT_SECONDS', '120')),
 
