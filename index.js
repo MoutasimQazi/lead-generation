@@ -1,46 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#F1561D">
-<title>Movenetics · Lead Search</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
-</head>
-<body>
-<div class="wrap">
-
-  <header class="top"><div class="nav" id="nav"></div></header>
-
-  <section class="hero">
-    <h1>Find your next <span class="accent">leads</span></h1>
-    <p>Ask in plain English — describe the trade, place, and contact details you need, and we'll write the query for you.</p>
-  </section>
-
-  <div class="ask">
-    <input id="q" type="text" autocomplete="off" spellcheck="false"
-           placeholder="Ask for the leads you want — plain English">
-    <button class="go" id="go">Search</button>
-  </div>
-
-  <div class="chips" id="chips"></div>
-
-  <div class="status" id="status"></div>
-
-</div>
-
-<script src="app.js"></script>
-<script src="index.js"></script>
-<script type="application/json">
-/* ── config ─────────────────────────────────────────────────────────────
-   No webhook URL and no API key live here any more. The browser calls
-   /api/search on this same origin; the server holds the n8n credentials and
-   attaches them. Before this, both sat in localStorage where anyone with the
-   page open could read them.                                                */
-
+/* Search page behavior. External so the site's CSP can block inline scripts. */
 const EXAMPLES = [
   'Roofers in Oklahoma with mobile numbers and no email',
   'How many HVAC companies are in Texas',
@@ -50,7 +8,6 @@ const EXAMPLES = [
 ];
 
 const qEl = $('q'), statusEl = $('status');
-
 let rows = [], cols = [], page = 0, busy = false, searchableRows = 0;
 const PER_PAGE = 50;
 
@@ -64,8 +21,6 @@ const LABELS = {
 };
 const label = c => LABELS[c] || String(c).replace(/_/g,' ').replace(/\b\w/g, m => m.toUpperCase());
 
-/* ── boot ───────────────────────────────────────────────────────────── */
-
 (async () => {
   await requireSession({ page: 'search' });
 
@@ -77,8 +32,6 @@ const label = c => LABELS[c] || String(c).replace(/_/g,' ').replace(/\b\w/g, m =
     $('chips').appendChild(b);
   });
 
-  // The record count is read from what is actually searchable right now,
-  // rather than being a number hard-coded into the page.
   try {
     const { datasets } = await apiGet('api/datasets');
     const searchable = datasets.filter(d => d.is_searchable && d.status === 'ready');
@@ -97,8 +50,6 @@ const label = c => LABELS[c] || String(c).replace(/_/g,' ').replace(/\b\w/g, m =
 
 $('go').addEventListener('click', run);
 qEl.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
-
-/* ── run ────────────────────────────────────────────────────────────── */
 
 async function run(){
   const question = qEl.value.trim();
@@ -128,8 +79,6 @@ async function run(){
 
   render(body, Math.round(performance.now() - started));
 }
-
-/* ── render ─────────────────────────────────────────────────────────── */
 
 function render(body, ms){
   if (!rows.length) {
@@ -227,8 +176,6 @@ function cell(col, val){
   return '<td>' + esc(v) + '</td>';
 }
 
-/* ── csv, built in the browser from the rows already loaded ─────────── */
-
 function downloadCsv(){
   const q = s => '"' + String(s ?? '').replace(/"/g,'""') + '"';
   const csv = [cols.map(q).join(',')]
@@ -242,6 +189,3 @@ function downloadCsv(){
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
-</script>
-</body>
-</html>
