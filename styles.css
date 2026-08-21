@@ -47,8 +47,7 @@
   --shadow-lg:0 2px 6px rgba(20,22,26,.05), 0 26px 52px -30px rgba(20,22,26,.26);
 }
 
-@media (prefers-color-scheme:dark){
-  :root{
+:root[data-theme="dark"]{
     --ink:#F3EEE9;
     --ink-2:#ADA69E;
     --ink-3:#7C756D;
@@ -75,7 +74,6 @@
 
     --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 28px -16px rgba(0,0,0,.7);
     --shadow-lg:0 2px 8px rgba(0,0,0,.5), 0 28px 56px -28px rgba(0,0,0,.8);
-  }
 }
 
 *{box-sizing:border-box}
@@ -109,11 +107,17 @@ input{font-family:inherit}
 }
 .logo{display:flex;align-items:center;gap:10px;min-width:0;cursor:pointer;flex:none}
 .logo img{height:30px;width:auto;display:block}
-@media (prefers-color-scheme:dark){
-  /* the wordmark is black on transparent — keep a light backing behind it */
-  .logo{background:#fff;padding:5px 9px;border-radius:var(--r-pill)}
-  .logo img{height:24px}
+/* the wordmark is black on transparent — keep a light backing behind it */
+:root[data-theme="dark"] .logo{background:#fff;padding:5px 9px;border-radius:var(--r-pill)}
+:root[data-theme="dark"] .logo img{height:24px}
+.theme-toggle{
+  background:var(--sunken);border:1px solid var(--line);color:var(--ink-2);
+  border-radius:var(--r-pill);padding:8px 13px;font-size:11.5px;font-weight:700;
+  white-space:nowrap;transition:border-color .15s,color .15s,background .15s;
 }
+.theme-toggle:hover{border-color:var(--primary);color:var(--primary-ink);background:var(--primary-soft)}
+.auth-theme{position:absolute;top:18px;right:18px}
+.authcard{position:relative}
 .navitem{
   background:none;border:none;color:var(--ink);text-decoration:none;
   border-radius:var(--r-pill);padding:9px 18px;

@@ -7,6 +7,54 @@
 const $ = (id) => document.getElementById(id);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+/* ── theme ─────────────────────────────────────────────────────────────── */
+
+const THEME_KEY = 'movenetics.theme';
+
+function preferredTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch (e) { /* storage can be disabled */ }
+
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+    ? 'dark' : 'light';
+}
+
+function applyTheme(theme, remember = false) {
+  const next = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  document.documentElement.style.colorScheme = next;
+
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = next === 'dark' ? '#141210' : '#FAF7F4';
+
+  if (remember) {
+    try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* optional */ }
+  }
+
+  $$('.theme-toggle').forEach((button) => {
+    button.textContent = next === 'dark' ? '☀ Light' : '◐ Dark';
+    button.title = 'Switch to ' + (next === 'dark' ? 'light' : 'dark') + ' mode';
+    button.setAttribute('aria-label', button.title);
+  });
+}
+
+function bindThemeToggle(root = document) {
+  $$('.theme-toggle', root).forEach((button) => {
+    if (button.dataset.themeBound) return;
+    button.dataset.themeBound = '1';
+    button.addEventListener('click', () => {
+      const current = document.documentElement.dataset.theme || preferredTheme();
+      applyTheme(current === 'dark' ? 'light' : 'dark', true);
+    });
+  });
+  applyTheme(document.documentElement.dataset.theme || preferredTheme());
+}
+
+applyTheme(preferredTheme());
+document.addEventListener('DOMContentLoaded', () => bindThemeToggle());
+
 /** Session state, filled by requireSession(). */
 const session = { user: null, csrf: null };
 
@@ -183,10 +231,13 @@ function renderNav(active) {
         esc(l.label) + '</a>'
     ).join('') +
     '<span class="spacer"></span>' +
+    '<button class="theme-toggle" type="button">Theme</button>' +
     '<span class="pill-dark">' + esc(u.role) + '</span>' +
     '<span class="avatar" title="' + esc(u.email) + '">' + esc(initials(u.full_name)) + '</span>' +
     '<span class="whoami">' + esc(u.full_name) + '</span>' +
     '<button class="signout" id="signout">Sign out</button>';
+
+  bindThemeToggle(host);
 
   $('signout').addEventListener('click', async () => {
     try { await apiPost('api/auth/logout', {}); } catch (e) { /* leaving anyway */ }

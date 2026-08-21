@@ -98,6 +98,7 @@ function h(string $s): string
 </head>
 <body class="centered">
 <main class="authcard">
+  <button class="theme-toggle auth-theme" type="button">Theme</button>
 
   <div class="authhead">
     <h1>Set up Lead Search</h1>
@@ -167,5 +168,7 @@ function h(string $s): string
 <?php endif; ?>
 
 </main>
+
+<script src="app.js?v=20260822-4"></script>
 </body>
 </html>
