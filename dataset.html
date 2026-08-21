@@ -20,6 +20,16 @@
 
   <div id="banner"></div>
 
+  <section class="assignment-panel" id="assignmentPanel" hidden>
+    <div class="sechead">
+      <h2>Assigned employees</h2>
+      <span class="spacer"></span>
+      <button class="btn btn-primary btn-sm" id="assignmentSave">Save assignments</button>
+    </div>
+    <p class="muted">Assigned employees can view this dataset and choose whether to include it in their own AI searches.</p>
+    <div class="assignment-list" id="assignmentList"></div>
+  </section>
+
   <div class="toolbar" id="tools" hidden>
     <input type="search" id="q" placeholder="Search this dataset…" autocomplete="off">
     <select id="per">
@@ -53,12 +63,6 @@
     <label class="switch" style="margin:4px 0 18px">
       <input type="checkbox" id="setSearchable"><span class="track"></span>
       <span id="searchableLabel">Let the AI search this data</span></label>
-
-    <div id="assignmentSection" hidden>
-      <div class="field"><span>Assigned employees</span></div>
-      <p class="sub">Assigned employees can view this dataset and choose whether to include it in their own AI searches.</p>
-      <div class="assignment-list" id="assignmentList"></div>
-    </div>
 
     <div class="notice bad" id="deleteSection">
       <strong>Delete this dataset</strong>
@@ -102,7 +106,7 @@
 </div>
 
 <script src="app.js?v=20260822-4"></script>
-<script src="dataset.js?v=20260822-3"></script>
+<script src="dataset.js?v=20260822-5"></script>
 <script type="application/json">
 const id = Number(new URLSearchParams(location.search).get('id') || 0);
 

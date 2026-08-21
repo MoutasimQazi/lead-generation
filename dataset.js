@@ -27,6 +27,7 @@ async function loadDataset() {
     ds = data.dataset;
     columns = ds.columns || [];
     renderHead();
+    if (session.user.is_admin) await loadAssignments();
     if (ds.status === 'ready') {
       await loadFilterOptions();
       await loadRows();
@@ -66,6 +67,7 @@ function renderHead() {
   $('settingsBtn').hidden = false;
 
   if (session.user.is_admin) {
+    $('assignmentPanel').hidden = false;
     $('settingsSub').textContent = ds.is_protected
       ? 'This dataset is protected and cannot be deleted.'
       : 'Deleting removes this dataset and all of its rows permanently.';
@@ -79,6 +81,44 @@ function renderHead() {
       'It can be searched and exported, but not edited or deleted here.</div>';
   }
 }
+
+async function loadAssignments() {
+  $('assignmentList').innerHTML = '<p class="muted" style="margin:6px">Loading employees…</p>';
+  try {
+    const data = await apiGet('api/datasets/' + id + '/assignments');
+    assignmentEmployees = data.employees || [];
+    $('assignmentList').innerHTML = assignmentEmployees.length
+      ? assignmentEmployees.map(employee =>
+          '<label class="assignment-person">' +
+            '<input type="checkbox" data-assignee="' + employee.id + '"' +
+              (employee.assigned ? ' checked' : '') +
+              (!employee.is_active ? ' disabled' : '') + '>' +
+            '<span><strong>' + esc(employee.full_name) + '</strong>' +
+            '<small>' + esc(employee.email) +
+              (!employee.is_active ? ' · inactive' : '') + '</small></span>' +
+          '</label>'
+        ).join('')
+      : '<p class="muted" style="margin:6px">No employee accounts yet.</p>';
+  } catch (err) {
+    $('assignmentList').innerHTML = '<p class="muted" style="margin:6px">Could not load employees.</p>';
+  }
+}
+
+$('assignmentSave').addEventListener('click', async () => {
+  const button = $('assignmentSave');
+  const userIds = $$('[data-assignee]:checked').map(input => Number(input.dataset.assignee));
+  try {
+    button.disabled = true;
+    button.textContent = 'Saving…';
+    await apiPatch('api/datasets/' + id + '/assignments', { user_ids: userIds });
+    toast('Employee assignments saved.');
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Save assignments';
+  }
+});
 
 $('settingsBtn').addEventListener('click', async () => {
   if (!ds) return;
@@ -104,36 +144,18 @@ $('settingsBtn').addEventListener('click', async () => {
   $('delConfirm').disabled = !session.user.is_admin || ds.is_protected;
   $('delBtn').disabled = !session.user.is_admin || ds.is_protected;
   $('deleteSection').hidden = !session.user.is_admin;
-  $('assignmentSection').hidden = !session.user.is_admin;
 
   if (session.user.is_admin) {
     try {
-      const [folderData, assignmentData] = await Promise.all([
-        apiGet('api/folders'),
-        apiGet('api/datasets/' + id + '/assignments'),
-      ]);
+      const folderData = await apiGet('api/folders');
 
       $('setFolder').innerHTML = '<option value="">No folder</option>' +
         folderData.folders.map(folder => '<option value="' + folder.id + '"' +
           (folder.id === ds.folder_id ? ' selected' : '') + '>' +
           esc(folder.name) + '</option>').join('');
 
-      assignmentEmployees = assignmentData.employees || [];
-      $('assignmentList').innerHTML = assignmentEmployees.length
-        ? assignmentEmployees.map(employee =>
-            '<label class="assignment-person">' +
-              '<input type="checkbox" data-assignee="' + employee.id + '"' +
-                (employee.assigned ? ' checked' : '') +
-                (!employee.is_active ? ' disabled' : '') + '>' +
-              '<span><strong>' + esc(employee.full_name) + '</strong>' +
-              '<small>' + esc(employee.email) +
-                (!employee.is_active ? ' · inactive' : '') + '</small></span>' +
-            '</label>'
-          ).join('')
-        : '<p class="muted" style="margin:6px">No employee accounts yet.</p>';
     } catch (err) {
       $('setFolder').innerHTML = '<option value="">No folder</option>';
-      $('assignmentList').innerHTML = '<p class="muted" style="margin:6px">Could not load employees.</p>';
     }
   }
 
@@ -168,9 +190,6 @@ $('settingsSave').addEventListener('click', async () => {
 
     if (session.user.is_admin) {
       result = await apiPatch('api/datasets/' + id, body);
-
-      const userIds = $$('[data-assignee]:checked').map(input => Number(input.dataset.assignee));
-      await apiPatch('api/datasets/' + id + '/assignments', { user_ids: userIds });
     } else {
       result = await apiPatch('api/datasets/' + id + '/search-preference', {
         enabled: $('setSearchable').checked,
