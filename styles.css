@@ -365,6 +365,7 @@ body.centered{display:flex;align-items:center;justify-content:center;padding:24p
 .authhead{margin-bottom:22px}
 .authhead h1{margin:0 0 6px;font-size:22px;font-weight:700;letter-spacing:-.02em}
 .authhead p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.authcard #status:not(:empty){margin-bottom:18px}
 .authform .go{width:100%;margin-top:6px}
 .authform .field input{background:var(--page)}
 
