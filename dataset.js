@@ -6,6 +6,7 @@ let per = 50;
 let term = '';
 let sort = '';
 let dir = 'asc';
+let filters = {};
 
 (async () => {
   await requireSession({ page: 'datasets' });
@@ -62,7 +63,10 @@ async function loadRows() {
   }
 
   $('status').innerHTML = '<div class="loading"><span class="pulse"></span>Loading rows...</div>';
-  const params = new URLSearchParams({ page, per, q: term, sort, dir });
+  const params = new URLSearchParams({
+    page, per, q: term, sort, dir,
+    filters: JSON.stringify(filters),
+  });
 
   try {
     const data = await apiGet('api/datasets/' + id + '/rows?' + params);
@@ -81,11 +85,16 @@ function renderRows(data) {
   }
 
   const head = columns.map(c =>
-    '<th><button class="linkbtn" data-sort="' + esc(c.name) + '" ' +
-      'style="color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit">' +
-      esc(c.label || c.name) +
-      (sort === c.name ? (dir === 'asc' ? ' ▲' : ' ▼') : '') +
-    '</button></th>').join('');
+    '<th>' +
+      '<button class="linkbtn" data-sort="' + esc(c.name) + '" ' +
+        'style="color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit">' +
+        esc(c.label || c.name) +
+        (sort === c.name ? (dir === 'asc' ? ' ▲' : ' ▼') : '') +
+      '</button>' +
+      '<input class="column-filter" type="search" data-filter="' + esc(c.name) + '" ' +
+        'placeholder="Filter..." value="' + esc(filters[c.name] || '') + '" ' +
+        'aria-label="Filter ' + esc(c.label || c.name) + '">' +
+    '</th>').join('');
 
   $('status').innerHTML =
     '<div class="sechead"><h2>Rows</h2><span class="cbadge">' + fmt(data.total) + '</span></div>' +
@@ -101,6 +110,18 @@ function renderRows(data) {
     else { sort = column; dir = 'asc'; }
     page = 1;
     loadRows();
+  }));
+
+  $$('[data-filter]').forEach(input => input.addEventListener('input', event => {
+    const column = event.target.dataset.filter;
+    clearTimeout(window.datasetFilterTimer);
+    window.datasetFilterTimer = setTimeout(() => {
+      const value = event.target.value.trim();
+      if (value) filters[column] = value;
+      else delete filters[column];
+      page = 1;
+      loadRows();
+    }, 300);
   }));
 }
 

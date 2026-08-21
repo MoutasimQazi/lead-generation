@@ -285,6 +285,12 @@ thead th{
   font-weight:700;padding:13px 16px;border-bottom:1px solid var(--line);
   white-space:nowrap;z-index:1;
 }
+.column-filter{
+  display:block;width:130px;margin-top:7px;padding:6px 8px;
+  background:var(--card);border:1px solid var(--line);border-radius:6px;
+  color:var(--ink);font:500 11px var(--font-sans);text-transform:none;
+}
+.column-filter::placeholder{color:var(--ink-3)}
 tbody td{padding:13px 16px;border-bottom:1px solid var(--line-2);vertical-align:top}
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover{background:var(--primary-soft)}

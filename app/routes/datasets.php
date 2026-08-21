@@ -230,6 +230,30 @@ function route_rows_list(int $id): never
     $search = query_string('q');
     $sort   = query_string('sort', '', 64);
     $dir    = strtolower(query_string('dir', 'asc', 4)) === 'desc' ? 'DESC' : 'ASC';
+    $filters = [];
+    $filterJson = query_string('filters', '', 4000);
+
+    if ($filterJson !== '') {
+        $decoded = json_decode($filterJson, true);
+
+        if (!is_array($decoded)) {
+            fail('Invalid column filters.', 422);
+        }
+
+        foreach ($decoded as $name => $value) {
+            if (!is_string($name) || !is_scalar($value)) {
+                continue;
+            }
+
+            $value = trim((string) $value);
+            if ($value === '') {
+                continue;
+            }
+
+            $column = dataset_column($d, $name);
+            $filters[$column['name']] = $value;
+        }
+    }
 
     $select = [qsys('_row_id') . ' AS _row_id', qsys('_source_file') . ' AS _source_file'];
 
@@ -253,6 +277,12 @@ function route_rows_list(int $id): never
         if ($clauses !== []) {
             $where = ' WHERE (' . implode(' OR ', $clauses) . ')';
         }
+    }
+
+    foreach ($filters as $name => $value) {
+        $where .= $where === '' ? ' WHERE ' : ' AND ';
+        $where .= qi((string) $name) . ' LIKE ?';
+        $params[] = '%' . $value . '%';
     }
 
     $orderBy = qsys('_row_id') . ' ASC';
