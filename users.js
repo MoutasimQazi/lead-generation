@@ -1,68 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#F1561D">
-<title>Users · Movenetics Lead Search</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
-</head>
-<body>
-<div class="wrap">
-
-  <header class="top"><div class="nav" id="nav"></div></header>
-
-  <section class="hero">
-    <h1>Team <span class="accent">access</span></h1>
-    <p>Admins upload and edit data. Employees can search and export, nothing more.</p>
-  </section>
-
-  <div class="toolbar">
-    <span class="spacer"></span>
-    <button class="btn btn-primary" id="newUser">Add person</button>
-  </div>
-
-  <div id="status"></div>
-</div>
-
-<!-- ── add person ─────────────────────────────────────────────────────── -->
-<div class="modal" id="userModal">
-  <div class="modal-card">
-    <h2>Add person</h2>
-    <p class="sub">They sign in with this email and password. There is no sign-up page — every account is created here.</p>
-
-    <label class="field"><span>Full name</span>
-      <input type="text" id="uName" maxlength="120"></label>
-
-    <label class="field"><span>Email</span>
-      <input type="email" id="uEmail" maxlength="190" autocomplete="off"></label>
-
-    <label class="field"><span>Role</span>
-      <select id="uRole">
-        <option value="employee">Employee — search and export</option>
-        <option value="admin">Admin — full control</option>
-      </select></label>
-
-    <label class="field"><span>Password — at least 12 characters</span>
-      <input type="text" id="uPass" maxlength="200" autocomplete="off"></label>
-
-    <p class="note" style="margin-top:0">The password is shown in plain text so you can copy it to
-      the person directly. Ask them to change it once they are in.</p>
-
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal('userModal')">Cancel</button>
-      <button class="btn" id="uGen">Generate password</button>
-      <button class="btn btn-primary" id="uSave">Create account</button>
-    </div>
-  </div>
-</div>
-
-<script src="app.js"></script>
-<script src="users.js"></script>
-<script type="application/json">
 let users = [];
 
 (async () => {
@@ -72,7 +7,7 @@ let users = [];
 
 async function load() {
   const status = $('status');
-  status.innerHTML = '<div class="loading"><span class="pulse"></span>Loading people…</div>';
+  status.innerHTML = '<div class="loading"><span class="pulse"></span>Loading people...</div>';
 
   try {
     ({ users } = await apiGet('api/users'));
@@ -137,11 +72,7 @@ function row(u, isActive) {
   '</tr>';
 }
 
-/* ── actions ──────────────────────────────────────────────────────────── */
-
 function randomPassword() {
-  // Ambiguous characters left out so the password survives being read aloud
-  // or copied by hand.
   const alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const bytes = new Uint32Array(16);
   crypto.getRandomValues(bytes);
@@ -220,6 +151,3 @@ async function resetPassword(userId) {
     toast(err.message, true);
   }
 }
-</script>
-</body>
-</html>

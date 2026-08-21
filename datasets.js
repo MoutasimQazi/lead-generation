@@ -1,55 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#F1561D">
-<title>Datasets · Movenetics Lead Search</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
-</head>
-<body>
-<div class="wrap">
-
-  <header class="top"><div class="nav" id="nav"></div></header>
-
-  <section class="hero">
-    <h1>Your <span class="accent">datasets</span></h1>
-    <p>Everything uploaded into the database, grouped by folder. Marking one searchable lets the AI query it.</p>
-  </section>
-
-  <div class="toolbar">
-    <input type="search" id="filter" placeholder="Filter by name…" autocomplete="off">
-    <span class="spacer"></span>
-    <button class="btn" id="newFolder" hidden>New folder</button>
-    <a class="btn btn-primary" id="uploadLink" href="upload.html" hidden>Upload files</a>
-  </div>
-
-  <div id="status"></div>
-
-</div>
-
-<!-- ── new folder ─────────────────────────────────────────────────────── -->
-<div class="modal" id="folderModal">
-  <div class="modal-card">
-    <h2>New folder</h2>
-    <p class="sub">Folders group datasets. Uploading several files into one folder lets you append them into a single table when their columns match.</p>
-    <label class="field">
-      <span>Folder name</span>
-      <input id="folderName" type="text" maxlength="120" placeholder="e.g. Oklahoma contractors">
-    </label>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal('folderModal')">Cancel</button>
-      <button class="btn btn-primary" id="folderSave">Create folder</button>
-    </div>
-  </div>
-</div>
-
-<script src="app.js"></script>
-<script src="datasets.js"></script>
-<script type="application/json">
 let datasets = [], folders = [];
 
 (async () => {
@@ -65,7 +13,7 @@ let datasets = [], folders = [];
 
 async function load() {
   const status = $('status');
-  status.innerHTML = '<div class="loading"><span class="pulse"></span>Loading datasets…</div>';
+  status.innerHTML = '<div class="loading"><span class="pulse"></span>Loading datasets...</div>';
 
   try {
     const [d, f] = await Promise.all([apiGet('api/datasets'), apiGet('api/folders')]);
@@ -96,12 +44,11 @@ function render() {
   }
 
   if (!visible.length) {
-    status.innerHTML = '<div class="empty"><h3>Nothing matches “' + esc(term) + '”</h3>' +
+    status.innerHTML = '<div class="empty"><h3>Nothing matches "' + esc(term) + '"</h3>' +
                        '<p>Try a shorter search.</p></div>';
     return;
   }
 
-  // Group into folders, with unfiled datasets last so the named groups lead.
   const groups = new Map();
   folders.forEach(f => groups.set(f.id, { name: f.name, id: f.id, items: [] }));
   groups.set(null, { name: 'Unfiled', id: null, items: [] });
@@ -147,7 +94,7 @@ function card(d) {
   ].join(' · ');
 
   const toggle = session.user.is_admin
-    ? '<label class="switch" title="Let the AI search query this table" onclick="event.stopPropagation()">' +
+    ? '<label class="switch" title="Let the AI search query this table">' +
         '<input type="checkbox" data-searchable="' + d.id + '"' + (d.is_searchable ? ' checked' : '') +
         (d.status !== 'ready' ? ' disabled' : '') + '>' +
         '<span class="track"></span>Searchable</label>'
@@ -163,8 +110,6 @@ function card(d) {
     toggle +
   '</a>';
 }
-
-/* ── actions ──────────────────────────────────────────────────────────── */
 
 $('filter').addEventListener('input', render);
 
@@ -213,7 +158,7 @@ async function deleteFolder(id) {
       ' will become unfiled. The data itself is not deleted.'
     : '';
 
-  if (!confirm('Delete the folder “' + folder.name + '”?' + warning)) return;
+  if (!confirm('Delete the folder "' + folder.name + '"?' + warning)) return;
 
   try {
     await apiDelete('api/folders/' + id, {});
@@ -223,6 +168,3 @@ async function deleteFolder(id) {
     toast(err.message, true);
   }
 }
-</script>
-</body>
-</html>
