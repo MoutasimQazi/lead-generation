@@ -7,7 +7,7 @@
 # Directory listing off. Without this, / shows an index of every file here.
 Options -Indexes
 
-DirectoryIndex index.html
+DirectoryIndex login.html
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
@@ -60,7 +60,7 @@ DirectoryIndex index.html
 
   # Google Fonts is the only external origin these pages use. 'unsafe-inline'
   # covers style attributes only — scripts are strictly same-origin files.
-  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-HyQfbqTGZ+0A9AAuJHfUEGhrXKseOOjucO1BRi+88sQ=' 'sha256-TJARfTIQAn5ctuTq3X81bob/Rj3AIpETQSzYXxKAntM=' 'sha256-ccZpEGCnVjquGPAPFJ0fvAfhEX7haEoj16DTJfvm03U=' 'sha256-4CkF44X653hY2J2KIUSh7bWuTD/BA3zE7OnMhDexBzs=' 'sha256-DMTDR2tiHpFG0mQVqWGF5d5O7BTl48BKbVouauuxC74='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
 
   <FilesMatch "\.(html|php)$">
     Header always set Cache-Control "no-store, must-revalidate"
