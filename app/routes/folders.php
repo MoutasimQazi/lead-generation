@@ -29,24 +29,39 @@ function route_folders_list(): never
 {
     require_auth();
 
-    $folders = db_all(
-        'SELECT f.id, f.name, f.slug, f.created_at,
-                COUNT(d.id)                    AS dataset_count,
-                COALESCE(SUM(d.row_count), 0)  AS total_rows
-           FROM folders f
-           LEFT JOIN datasets d ON d.folder_id = f.id
-       GROUP BY f.id, f.name, f.slug, f.created_at
-       ORDER BY f.name ASC'
+    // Do the tiny metadata aggregation in PHP. GROUP BY/ORDER BY makes MariaDB
+    // create an Aria #sql-temptable on some cPanel builds, and this host has a
+    // read-only tmpdir. Dataset rows themselves are not loaded here.
+    $folders = db_all('SELECT id, name, slug, created_at FROM folders');
+    $counts  = [];
+
+    foreach (db_all('SELECT folder_id, row_count FROM datasets WHERE folder_id IS NOT NULL') as $dataset) {
+        $folderId = (int) $dataset['folder_id'];
+
+        if (!isset($counts[$folderId])) {
+            $counts[$folderId] = ['dataset_count' => 0, 'total_rows' => 0];
+        }
+
+        $counts[$folderId]['dataset_count']++;
+        $counts[$folderId]['total_rows'] += (int) $dataset['row_count'];
+    }
+
+    usort($folders, static fn(array $a, array $b): int =>
+        strcasecmp((string) $a['name'], (string) $b['name'])
     );
 
-    json_ok(['folders' => array_map(static fn($f) => [
-        'id'            => (int) $f['id'],
-        'name'          => $f['name'],
-        'slug'          => $f['slug'],
-        'dataset_count' => (int) $f['dataset_count'],
-        'total_rows'    => (int) $f['total_rows'],
-        'created_at'    => $f['created_at'],
-    ], $folders)]);
+    json_ok(['folders' => array_map(static function ($f) use ($counts): array {
+        $id = (int) $f['id'];
+
+        return [
+            'id'            => $id,
+            'name'          => $f['name'],
+            'slug'          => $f['slug'],
+            'dataset_count' => $counts[$id]['dataset_count'] ?? 0,
+            'total_rows'    => $counts[$id]['total_rows'] ?? 0,
+            'created_at'    => $f['created_at'],
+        ];
+    }, $folders)]);
 }
 
 function route_folders_create(): never

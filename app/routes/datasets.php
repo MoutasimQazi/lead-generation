@@ -122,9 +122,22 @@ function route_datasets_list(): never
     $rows = db_all(
         'SELECT d.*, f.name AS folder_name
            FROM datasets d
-           LEFT JOIN folders f ON f.id = d.folder_id
-       ORDER BY d.is_protected DESC, f.name ASC, d.display_name ASC'
+           LEFT JOIN folders f ON f.id = d.folder_id'
     );
+
+    // Sort this small metadata list in PHP. SQL ORDER BY on the join can spill
+    // to MariaDB's Aria tmpdir, which is read-only on the current cPanel host.
+    usort($rows, static function (array $a, array $b): int {
+        $protected = (int) $b['is_protected'] <=> (int) $a['is_protected'];
+        if ($protected !== 0) {
+            return $protected;
+        }
+
+        $folder = strcasecmp((string) ($a['folder_name'] ?? ''), (string) ($b['folder_name'] ?? ''));
+        return $folder !== 0
+            ? $folder
+            : strcasecmp((string) $a['display_name'], (string) $b['display_name']);
+    });
 
     $out = [];
 
