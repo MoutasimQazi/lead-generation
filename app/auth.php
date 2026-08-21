@@ -250,19 +250,21 @@ function require_csrf(): void
     }
 
     // Belt and braces: reject an obviously foreign Origin when one is present.
-    // Compares scheme + host only, allowing for common variations like trailing
-    // slashes or non-standard ports that proxies might introduce.
+    // Use the host receiving this request rather than APP_URL, which may be
+    // stale on a proxy or deployment copy. The CSRF token above remains the
+    // primary protection for state-changing requests.
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-    $appUrl = config('app_url');
+    $requestHost = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
 
-    if ($origin !== '' && $appUrl !== '') {
+    if ($origin !== '' && $requestHost !== '') {
         $originParts = parse_url($origin);
-        $appParts = parse_url($appUrl);
+        $originHost = strtolower((string) ($originParts['host'] ?? ''));
+        $originPort = (int) ($originParts['port'] ?? (($originParts['scheme'] ?? '') === 'https' ? 443 : 80));
 
-        $originHost = ($originParts['scheme'] ?? '') . '://' . ($originParts['host'] ?? '');
-        $appHost = ($appParts['scheme'] ?? '') . '://' . ($appParts['host'] ?? '');
+        [$requestName, $requestPort] = array_pad(explode(':', $requestHost, 2), 2, '');
+        $requestPort = $requestPort !== '' ? (int) $requestPort : $originPort;
 
-        if ($originHost !== $appHost) {
+        if ($originHost === '' || strtolower($requestName) !== $originHost || $requestPort !== $originPort) {
             fail('Request origin not allowed.', 403);
         }
     }
