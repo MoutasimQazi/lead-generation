@@ -14,6 +14,86 @@ require_once __DIR__ . '/../lib/audit.php';
  * page could read the key and call n8n directly.
  */
 
+/**
+ * Adds useful AI context without exposing sample lead rows or querying every
+ * distinct value on every search. Uploaded datasets use generic descriptions;
+ * the protected leads table gets the controlled values we already know.
+ */
+function search_column_profile(string $table, array $column): array
+{
+    $name  = (string) ($column['name'] ?? '');
+    $label = (string) ($column['label'] ?? ucwords(str_replace('_', ' ', $name)));
+    $type  = (string) ($column['type'] ?? 'TEXT');
+
+    $profile = [
+        'name'        => $name,
+        'label'       => $label,
+        'type'        => $type,
+        'description' => (string) ($column['description'] ?? ''),
+        'values'      => array_values(array_slice(
+            is_array($column['values'] ?? null) ? $column['values'] : [],
+            0,
+            100
+        )),
+    ];
+
+    if ($table !== config('leads_table')) {
+        return $profile;
+    }
+
+    $known = [
+        'size_band' => [
+            'description' => 'Company-size band. Unknown is common and should be excluded from size analysis.',
+            'values' => ['Unknown', 'Solo (1)', 'Micro (2-10)', 'Small (11-50)', 'Mid (51-200)', 'Large (201-1,000)', 'Enterprise (1,000+)'],
+        ],
+        'phone_type' => [
+            'description' => 'Telephone line classification.',
+            'values' => ['mobile', 'fixed line', 'voip', 'other'],
+        ],
+        'has_email' => [
+            'description' => 'Whether an email address is present. Stored as text, not a boolean.',
+            'values' => ['Yes', 'No'],
+        ],
+        'sectors_norm' => [
+            'description' => 'Comma-separated exact trade vocabulary. Use contains_any/FIND_IN_SET for inclusive trade matching.',
+        ],
+        'primary_sector' => [
+            'description' => 'The single main trade. Use only when the question explicitly asks for the primary trade.',
+        ],
+        'contact_person' => [
+            'description' => 'May contain several people and job titles in one text field.',
+        ],
+        'corporate_email' => [
+            'description' => 'Direct corporate contact email when available.',
+        ],
+        'generic_email' => [
+            'description' => 'May contain shared or multiple email addresses.',
+        ],
+        'phone' => [
+            'description' => 'Formatted telephone text rather than digits-only data.',
+        ],
+        'state' => [
+            'description' => 'Usually a two-letter US state or territory abbreviation.',
+        ],
+    ];
+
+    if (isset($known[$name])) {
+        $profile = array_replace($profile, $known[$name]);
+    }
+
+    return $profile;
+}
+
+function search_dataset_description(array $dataset): string
+{
+    if ((string) $dataset['table_name'] === config('leads_table')) {
+        return 'US business leads, primarily trades and services. Empty contact fields are normal. Use sectors_norm for inclusive trade searches and primary_sector only for explicitly primary-trade questions.';
+    }
+
+    return 'Admin-uploaded dataset named "' . (string) $dataset['display_name']
+        . '". Use only its declared columns and do not assume relationships to other datasets.';
+}
+
 /** Schema summary for every dataset the admin has marked searchable. */
 function searchable_schemas(): array
 {
@@ -30,13 +110,14 @@ function searchable_schemas(): array
         $cols = json_decode((string) $r['columns_json'], true) ?: [];
 
         $schemas[] = [
-            'table'     => $r['table_name'],
-            'label'     => $r['display_name'],
-            'row_count' => (int) $r['row_count'],
-            'columns'   => array_map(static fn($c) => [
-                'name' => $c['name'] ?? '',
-                'type' => $c['type'] ?? 'TEXT',
-            ], $cols),
+            'table'       => $r['table_name'],
+            'label'       => $r['display_name'],
+            'description' => search_dataset_description($r),
+            'row_count'   => (int) $r['row_count'],
+            'columns'     => array_values(array_map(
+                static fn($c) => search_column_profile((string) $r['table_name'], $c),
+                $cols
+            )),
         ];
     }
 
@@ -60,11 +141,20 @@ function route_search(): never
         fail('Search is not configured yet — set N8N_WEBHOOK_URL in .env.', 503);
     }
 
+    $schemas = searchable_schemas();
+
+    if ($schemas === []) {
+        fail('No datasets are currently enabled for search. Ask an admin to enable one.', 422);
+    }
+
+    $requestId = bin2hex(random_bytes(16));
     $payload = json_encode([
-        'question' => $question,
-        'schemas'  => searchable_schemas(),
-        'asked_by' => $user['email'],
-    ], JSON_UNESCAPED_SLASHES);
+        'request_id' => $requestId,
+        'question'   => $question,
+        'schemas'    => $schemas,
+        'asked_by'   => $user['email'],
+        'max_rows'   => 250,
+    ], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
 
     $headers = ['Content-Type: application/json'];
 
@@ -100,12 +190,15 @@ function route_search(): never
         fail('The search service returned something unreadable. Check the n8n workflow.', 502);
     }
 
-    if ($status >= 400) {
+    if ($status >= 400 || (is_array($decoded) && ($decoded['success'] ?? true) === false)) {
         $message = is_array($decoded)
             ? (string) ($decoded['error'] ?? $decoded['message'] ?? "The search service returned HTTP $status.")
             : "The search service returned HTTP $status.";
 
-        fail($message, 502);
+        // Preserve useful validation failures from n8n. Infrastructure and AI
+        // failures remain a gateway error rather than pretending PHP caused it.
+        $clientStatus = $status >= 400 && $status < 500 ? $status : 502;
+        fail($message, $clientStatus);
     }
 
     $rows = is_array($decoded) && array_is_list($decoded)
@@ -113,9 +206,19 @@ function route_search(): never
         : (is_array($decoded) ? ($decoded['data'] ?? []) : []);
 
     audit('search', $user, null, [
+        'request_id' => $requestId,
         'question' => mb_substr($question, 0, 500),
         'rows'     => is_array($rows) ? count($rows) : 0,
+        'dataset'  => is_array($decoded) ? ($decoded['dataset'] ?? null) : null,
+        'intent'   => is_array($decoded) ? ($decoded['intent'] ?? null) : null,
+        'confidence' => is_array($decoded) ? ($decoded['confidence'] ?? null) : null,
     ]);
+
+    // Employees get results and an explanation, but not the generated SQL.
+    // Admins retain the existing "Show query" debugging feature.
+    if (is_array($decoded) && empty($user['is_admin'])) {
+        unset($decoded['sql']);
+    }
 
     // Relayed as-is so the existing render()/paint() frontend keeps working
     // against the same response shape it was written for.

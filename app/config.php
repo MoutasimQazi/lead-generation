@@ -135,7 +135,7 @@ const BUILTIN_CONFIG = [
     'SESSION_SECRET' => '9d12bc3c676fde3543b46e389a6a1c58ee8a868d8401fdc76281e76ce6d707194ad28b84aa68691df6ccbd10ee1de681',
     'SESSION_HOURS'  => '12',
 
-    'N8N_WEBHOOK_URL'     => 'https://n8n.moveneticsdigital.com/webhook/lead-search',
+    'N8N_WEBHOOK_URL'     => 'https://n8n.moveneticsdigital.com/webhook/lead-search-v2',
     'N8N_API_KEY'         => '',
     'N8N_TIMEOUT_SECONDS' => '120',
 
