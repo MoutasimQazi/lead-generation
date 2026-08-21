@@ -290,6 +290,7 @@ thead th{
   background:var(--card);border:1px solid var(--line);border-radius:6px;
   color:var(--ink);font:500 11px var(--font-sans);text-transform:none;
 }
+.column-filter option{background:var(--card);color:var(--ink)}
 .column-filter::placeholder{color:var(--ink-3)}
 tbody td{padding:13px 16px;border-bottom:1px solid var(--line-2);vertical-align:top}
 tbody tr:last-child td{border-bottom:none}

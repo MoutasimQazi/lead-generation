@@ -7,6 +7,7 @@ let term = '';
 let sort = '';
 let dir = 'asc';
 let filters = {};
+let filterOptions = {};
 
 (async () => {
   await requireSession({ page: 'datasets' });
@@ -25,9 +26,21 @@ async function loadDataset() {
     ds = data.dataset;
     columns = ds.columns || [];
     renderHead();
-    if (ds.status === 'ready') await loadRows();
+    if (ds.status === 'ready') {
+      await loadFilterOptions();
+      await loadRows();
+    }
   } catch (err) {
     showError($('status'), 'Could not open that dataset', esc(err.message));
+  }
+}
+
+async function loadFilterOptions() {
+  try {
+    const data = await apiGet('api/datasets/' + id + '/filter-options');
+    filterOptions = data.options || {};
+  } catch (err) {
+    filterOptions = {};
   }
 }
 
@@ -84,17 +97,28 @@ function renderRows(data) {
     return;
   }
 
-  const head = columns.map(c =>
-    '<th>' +
+  const head = columns.map(c => {
+    const option = filterOptions[c.name];
+    const control = option && !option.limited
+      ? '<select class="column-filter" data-filter="' + esc(c.name) + '" aria-label="Filter ' +
+          esc(c.label || c.name) + '">' +
+          '<option value="">All</option>' +
+          option.values.map(value => '<option value="' + esc(value) + '"' +
+            (filters[c.name] === value ? ' selected' : '') + '>' + esc(value) + '</option>').join('') +
+        '</select>'
+      : '<input class="column-filter" type="search" data-filter="' + esc(c.name) + '" ' +
+          'placeholder="Filter..." value="' + esc(filters[c.name] || '') + '" ' +
+          'aria-label="Filter ' + esc(c.label || c.name) + '">';
+
+    return '<th>' +
       '<button class="linkbtn" data-sort="' + esc(c.name) + '" ' +
         'style="color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit">' +
         esc(c.label || c.name) +
         (sort === c.name ? (dir === 'asc' ? ' ▲' : ' ▼') : '') +
       '</button>' +
-      '<input class="column-filter" type="search" data-filter="' + esc(c.name) + '" ' +
-        'placeholder="Filter..." value="' + esc(filters[c.name] || '') + '" ' +
-        'aria-label="Filter ' + esc(c.label || c.name) + '">' +
-    '</th>').join('');
+      control +
+    '</th>';
+  }).join('');
 
   $('status').innerHTML =
     '<div class="sechead"><h2>Rows</h2><span class="cbadge">' + fmt(data.total) + '</span></div>' +

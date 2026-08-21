@@ -85,6 +85,7 @@ function routes(): array
 
         ['GET',    '/api/datasets',                  'route_datasets_list'],
         ['GET',    '/api/datasets/{id}',             'route_datasets_get'],
+        ['GET',    '/api/datasets/{id}/filter-options', 'route_dataset_filter_options'],
         ['PATCH',  '/api/datasets/{id}',             'route_datasets_update'],
         ['DELETE', '/api/datasets/{id}',             'route_datasets_delete'],
         ['GET',    '/api/datasets/{id}/export',      'route_dataset_export'],

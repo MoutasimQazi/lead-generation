@@ -84,6 +84,35 @@ function dataset_summary(array $d): array
     ];
 }
 
+function route_dataset_filter_options(int $id): never
+{
+    require_auth();
+
+    $dataset = load_dataset($id);
+    $table = qi((string) $dataset['table_name']);
+    $options = [];
+
+    foreach ($dataset['columns'] as $column) {
+        $name = (string) $column['name'];
+        $rows = db_all(
+            'SELECT DISTINCT ' . qi($name) . ' AS value
+               FROM ' . $table . '
+              WHERE ' . qi($name) . ' IS NOT NULL
+                AND ' . qi($name) . ' <> ""
+              ORDER BY ' . qi($name) . '
+              LIMIT 101'
+        );
+
+        $values = array_map(static fn(array $row): string => (string) $row['value'], $rows);
+        $options[$name] = [
+            'values'  => array_slice($values, 0, 100),
+            'limited' => count($values) > 100,
+        ];
+    }
+
+    json_ok(['options' => $options]);
+}
+
 /* ── list & read ───────────────────────────────────────────────────────── */
 
 function route_datasets_list(): never
