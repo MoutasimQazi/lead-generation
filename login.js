@@ -48,7 +48,18 @@ $('form').addEventListener('submit', async (e) => {
 
     location.href = safeNext();
   } catch (err) {
-    showError(status, 'Could not sign in', esc(err.message));
+    if (err.status === 401) {
+      status.innerHTML =
+        '<div class="err">' +
+          '<h3>Sign-in failed</h3>' +
+          '<p>The email or password is incorrect. Please check both and try again.</p>' +
+          '<p class="login-help">Need access? Contact the site manager at ' +
+            '<a href="mailto:moutasim.qazi@moveneticsdigital.com">' +
+              'moutasim.qazi@moveneticsdigital.com</a>.</p>' +
+        '</div>';
+    } else {
+      showError(status, 'Sign-in failed', esc(err.message));
+    }
     btn.disabled = false;
     btn.textContent = 'Sign in';
     $('password').value = '';

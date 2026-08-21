@@ -249,6 +249,8 @@ input{font-family:inherit}
 }
 .err h3{margin:0 0 5px;font-size:14px;font-weight:700;color:var(--danger)}
 .err p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.err .login-help{margin-top:8px}
+.err a{color:var(--primary-ink);font-weight:600}
 .err code{font-size:12.5px;font-family:var(--font-mono);background:rgba(196,50,31,.10);padding:1px 5px;border-radius:4px}
 
 .empty{
