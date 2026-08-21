@@ -116,25 +116,34 @@ function db_transaction(callable $fn): mixed
 /** True when a table exists in the configured database. */
 function db_table_exists(string $table): bool
 {
-    $n = db_value(
-        'SELECT COUNT(*) FROM information_schema.TABLES
-          WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
-        [config('db_name'), $table],
-        0
-    );
+    // information_schema queries can make MariaDB materialize an Aria
+    // temporary table in tmpdir. Some cPanel hosts mount /tmp read-only,
+    // causing even this harmless existence check to fail with Errcode 30.
+    // SHOW TABLES streams the catalog without that temporary-table path.
+    $stmt = db()->query('SHOW TABLES');
 
-    return (int) $n > 0;
+    while (($row = $stmt->fetch(PDO::FETCH_NUM)) !== false) {
+        if (isset($row[0]) && (string) $row[0] === $table) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /** Column names of an existing table, in ordinal order. */
 function db_table_columns(string $table): array
 {
-    $rows = db_all(
-        'SELECT COLUMN_NAME FROM information_schema.COLUMNS
-          WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-       ORDER BY ORDINAL_POSITION',
-        [config('db_name'), $table]
-    );
+    if (!preg_match('/^[a-z][a-z0-9_]{0,62}$/i', $table)) {
+        throw new InvalidArgumentException('Unsafe table identifier.');
+    }
 
-    return array_column($rows, 'COLUMN_NAME');
+    // SHOW COLUMNS already returns physical ordinal order and avoids the
+    // information_schema ORDER BY that can spill into MariaDB's tmpdir.
+    $rows = db_all('SHOW COLUMNS FROM `' . $table . '`');
+
+    return array_values(array_map(
+        static fn(array $row): string => (string) ($row['Field'] ?? ''),
+        $rows
+    ));
 }
