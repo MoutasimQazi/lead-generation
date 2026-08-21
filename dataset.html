@@ -384,19 +384,36 @@ $('settingsBtn').addEventListener('click', async () => {
 
 $('settingsSave').addEventListener('click', async () => {
   const body = { is_searchable: $('setSearchable').checked };
+  const button = $('settingsSave');
 
   if (!ds.is_protected) {
     body.display_name = $('setName').value.trim();
     body.folder_id = $('setFolder').value ? Number($('setFolder').value) : null;
   }
 
+  if (!ds.is_protected && !body.display_name) {
+    $('setName').focus();
+    return toast('The dataset needs a name.', true);
+  }
+
   try {
-    await apiPatch('api/datasets/' + id, body);
+    button.disabled = true;
+    button.textContent = 'Saving…';
+    const result = await apiPatch('api/datasets/' + id, body);
+
+    if (result.dataset) {
+      ds = result.dataset;
+      columns = ds.columns || columns;
+      renderHead();
+    }
+
     closeModal('settingsModal');
-    toast('Saved.');
-    await loadDataset();
+    toast('Dataset settings saved.');
   } catch (err) {
     toast(err.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Save changes';
   }
 });
 

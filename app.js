@@ -81,6 +81,9 @@ async function api(method, path, body, opts = {}) {
       headers,
       body: payload,
       credentials: 'same-origin',
+      // API responses describe mutable database state. Reusing a cached GET
+      // after PATCH made successful edits appear to revert immediately.
+      cache: 'no-store',
     });
   } catch (e) {
     throw new Error('Could not reach the server. Check your connection and try again.');

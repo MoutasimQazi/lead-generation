@@ -223,7 +223,16 @@ function route_datasets_update(int $id): never
 
     audit('dataset.update', $user, $id, ['changes' => $changes]);
 
-    json_ok(['changes' => $changes]);
+    // Return authoritative state so the UI does not depend on a second GET.
+    $updated = load_dataset($id);
+
+    json_ok([
+        'changes' => $changes,
+        'dataset' => dataset_summary($updated) + [
+            'columns' => $updated['columns'],
+            'files'   => $updated['files'],
+        ],
+    ]);
 }
 
 function route_datasets_delete(int $id): never
