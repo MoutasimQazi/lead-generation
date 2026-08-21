@@ -12,7 +12,7 @@ declare(strict_types=1);
  * yours does, prefer:  php app/scripts/migrate.php && php app/scripts/create_admin.php
  */
 
-$appRoot = dirname(__DIR__) . '/app';
+$appRoot = __DIR__ . '/app';
 
 require_once $appRoot . '/config.php';
 require_once $appRoot . '/db.php';

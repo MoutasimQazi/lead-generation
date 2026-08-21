@@ -1,34 +1,47 @@
 # ── Movenetics Lead Search ────────────────────────────────────────────────
-# Contents of this folder go in the cPanel document root (public_html).
-# The app/ folder belongs OUTSIDE the document root — see DEPLOY.md.
+# Everything lives in one folder, which is the document root of
+# lead.moveneticsdigital.com. That means app/, var/ and .env sit INSIDE the
+# web root, so the deny rules below are load-bearing, not decoration.
+# If this file is ever lost or mod_rewrite is off, those paths become public.
+
+# Directory listing off. Without this, / shows an index of every file here.
+Options -Indexes
 
 DirectoryIndex index.html
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
-  # 1. HTTPS first. Sessions are issued with the Secure flag over TLS, so this
-  #    has to happen before anything touches a cookie.
-  #    Comment out until the certificate is issued, or you will lock yourself out.
+  # 1. HTTPS first — session cookies are issued Secure over TLS.
+  #    Comment out only if the certificate is not issued yet.
   RewriteCond %{HTTPS} off
   RewriteCond %{HTTP:X-Forwarded-Proto} !=https
   RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 
-  # 2. Refuse app internals outright, in case they are ever copied in here.
-  RewriteRule ^(app|var|vendor)/ - [F,L]
+  # 2. Application internals are never served, at any depth.
+  RewriteRule ^(app|var|vendor|tests)(/|$) - [F,L]
 
   # 3. Everything under /api/ goes to the PHP front controller.
-  #    Static pages are untouched and served directly by Apache.
   RewriteRule ^api/ index.php [QSA,L]
 </IfModule>
 
-# Never serve .env, whatever it is named or wherever it ends up.
-<FilesMatch "^\.env">
+# ── Belt and braces: deny by filename too, so a missing mod_rewrite does not
+#    silently expose the config or the source.
+<FilesMatch "^\.env|\.(ini|md|log|sql|json|lock)$">
   Require all denied
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
 </FilesMatch>
 
-# setup.php locks itself once an admin account exists, but delete it after the
-# first run regardless. Uncomment to block it outright:
+# .user.ini is read by PHP itself and must never be downloadable.
+<Files ".user.ini">
+  Require all denied
+</Files>
+
+# setup.php locks itself once an admin account exists. Delete it after the
+# first run; uncommenting this blocks it outright in the meantime.
 # <Files "setup.php">
 #   Require all denied
 # </Files>
@@ -40,13 +53,10 @@ DirectoryIndex index.html
   Header always set Referrer-Policy "same-origin"
   Header always set Cross-Origin-Opener-Policy "same-origin"
 
-  # Google Fonts is the only external origin these pages use. Everything else
-  # is same-origin, so a stray script or tracker simply will not load.
-  # 'unsafe-inline' is present for style-src only: the pages carry a few inline
-  # style attributes. Scripts are strictly same-origin files.
+  # Google Fonts is the only external origin these pages use. 'unsafe-inline'
+  # covers style attributes only — scripts are strictly same-origin files.
   Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
 
-  # An authenticated page must not sit in a shared cache.
   <FilesMatch "\.(html|php)$">
     Header always set Cache-Control "no-store, must-revalidate"
   </FilesMatch>

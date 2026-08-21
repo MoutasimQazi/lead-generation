@@ -42,26 +42,44 @@ tables. That is a real privilege, and the reason uploads are admin-only.
 
 `app/` must sit **outside** the document root. On a normal cPanel account:
 
-Copy the repo's two top-level folders so they end up as **siblings**, with
-`app/` one level above the document root:
+Everything goes in **one folder**: the document root of the subdomain
+(`lead.moveneticsdigital.com`). Upload the repo's contents as-is.
 
 ```
-/home/<cpaneluser>/
-├── app/                  ← keep this name; do not rename it
+<document root>/
+├── .htaccess             ← REQUIRED. Blocks app/, var/ and .env.
+├── .user.ini             ← PHP upload limits
+├── .env                  ← your credentials, chmod 600
+├── index.php             ← API front controller
+├── setup.php             ← delete after first run
+├── index.html  login.html  datasets.html  dataset.html  upload.html  users.html
+├── app.js  styles.css  logo.png
+├── app/                  ← keep this name; has its own deny-all .htaccess
 │   ├── config.php  db.php  http.php  auth.php  migrations.php
 │   └── lib/  routes/  scripts/  tests/
-├── .env                  ← NOT in public_html
-├── var/uploads/          ← created automatically, chmod 770
-└── public_html/          ← contents of the repo's public_html/
-    ├── .htaccess  .user.ini
-    ├── index.php  setup.php
-    ├── index.html  login.html  datasets.html  dataset.html  upload.html  users.html
-    └── app.js  styles.css  logo.png
+└── var/uploads/          ← created automatically, chmod 770
 ```
 
-The paths are relative and resolved at runtime — `public_html/index.php` looks
-for `dirname(__DIR__) . '/app'`, and `.env` is read from that same parent
-directory. Keep the folder named `app` and there is nothing to edit.
+> **`.htaccess` is load-bearing in this layout.** Because `app/`, `var/` and
+> `.env` live inside the web root, those files are only private because Apache
+> is told to refuse them. If `.htaccess` is missing, or the host has
+> `AllowOverride None`, your database password becomes downloadable at
+> `/.env`. Verify after deploying — see the check below.
+>
+> `app/.htaccess` is a second, independent lock on the same door. Upload it too.
+
+**Check this immediately after uploading.** All four must fail:
+
+```bash
+curl -I https://lead.moveneticsdigital.com/.env            # expect 403
+curl -I https://lead.moveneticsdigital.com/app/config.php  # expect 403
+curl -I https://lead.moveneticsdigital.com/DEPLOY.md       # expect 403
+curl -s  https://lead.moveneticsdigital.com/ | head -5     # expect the app, not "Index of /"
+```
+
+If any returns `200`, stop and fix the server config before putting real
+credentials in `.env`. Ask your host to set `AllowOverride All` for this
+directory.
 
 If your host forces everything into `public_html`, the shipped `.htaccess`
 blocks `app/`, `var/` and `.env` — but outside the docroot is strictly safer.

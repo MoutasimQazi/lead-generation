@@ -1,0 +1,13 @@
+# app/ contains configuration, database code and route handlers. Nothing in
+# here is ever requested directly — the front controller at ../index.php
+# includes it. In this single-folder layout app/ sits inside the document root,
+# so this file is a second lock on top of the deny rule in ../.htaccess.
+
+Require all denied
+
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
+
+Options -Indexes
