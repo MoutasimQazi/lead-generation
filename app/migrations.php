@@ -198,3 +198,45 @@ function run_migrations(): array
 
     return $log;
 }
+
+/**
+ * An upgraded installation may already have app_users (which locks setup.php)
+ * while missing dataset-management tables introduced later. Run the existing
+ * idempotent migration only when one of those tables is absent.
+ */
+function ensure_management_schema(): void
+{
+    $required = ['folders', 'datasets', 'upload_stages', 'import_jobs', 'audit_log'];
+    $missing  = false;
+
+    foreach ($required as $table) {
+        if (!db_table_exists($table)) {
+            $missing = true;
+            break;
+        }
+    }
+
+    if (!$missing) {
+        return;
+    }
+
+    $lockName = 'movenetics_lead_schema_bootstrap';
+    $locked   = (int) db_value('SELECT GET_LOCK(?, 15)', [$lockName], 0) === 1;
+
+    if (!$locked) {
+        throw new RuntimeException('Could not acquire the database migration lock. Please retry.');
+    }
+
+    try {
+        // The parallel folders request may have completed the migration while
+        // this request waited for the lock, so check again before writing.
+        foreach ($required as $table) {
+            if (!db_table_exists($table)) {
+                run_migrations();
+                break;
+            }
+        }
+    } finally {
+        db_value('SELECT RELEASE_LOCK(?)', [$lockName]);
+    }
+}

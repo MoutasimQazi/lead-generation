@@ -18,6 +18,7 @@ require_once $appRoot . '/http.php';
 install_error_handlers();
 
 require_once $appRoot . '/auth.php';
+require_once $appRoot . '/migrations.php';
 require_once $appRoot . '/routes/auth_routes.php';
 require_once $appRoot . '/routes/search.php';
 require_once $appRoot . '/routes/folders.php';
@@ -145,6 +146,14 @@ function dispatch(): never
 
         if ($routeMethod !== $method) {
             continue;
+        }
+
+        // setup.php locks after the first admin is created. Older deployments
+        // can therefore have working authentication but none of the management
+        // tables added later. Self-heal on the first authenticated request.
+        if (preg_match('#^/api/(?:datasets|folders|uploads|imports)(?:/|$)#', $path)) {
+            require_auth();
+            ensure_management_schema();
         }
 
         $args = [];
