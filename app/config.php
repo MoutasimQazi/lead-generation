@@ -155,10 +155,10 @@ function build_config(): array
     // missing .env is not an error, just the default install.
     $get = static function (string $k, ?string $fallback = null) use ($env): ?string {
         $v = getenv($k);
-        if ($v !== false && $v !== '') {
+        if ($v !== false && $v !== '' && !config_placeholder($v)) {
             return $v;
         }
-        if (isset($env[$k]) && $env[$k] !== '') {
+        if (isset($env[$k]) && $env[$k] !== '' && !config_placeholder($env[$k])) {
             return $env[$k];
         }
         if (isset(BUILTIN_CONFIG[$k]) && BUILTIN_CONFIG[$k] !== '') {
@@ -206,4 +206,10 @@ function build_config(): array
         'import_per_request' => max(500, (int) $get('IMPORT_ROWS_PER_REQUEST', '20000')),
         'infer_sample'      => max(20, (int) $get('INFER_SAMPLE_ROWS', '500')),
     ];
+}
+
+/** A copied .env.example must not replace live built-in settings. */
+function config_placeholder(string $value): bool
+{
+    return in_array(trim($value), ['replace-me', 'replace-me-with-96-hex-chars'], true);
 }

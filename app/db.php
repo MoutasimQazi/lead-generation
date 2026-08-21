@@ -26,14 +26,28 @@ function db(): PDO
         config('db_name')
     );
 
-    $pdo = new PDO($dsn, config('db_user'), config('db_pass'), [
-        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        // Real server-side prepares. Emulation would re-introduce string
-        // interpolation of values, which is the thing we are avoiding.
-        PDO::ATTR_EMULATE_PREPARES   => false,
-        PDO::ATTR_STRINGIFY_FETCHES  => false,
-    ]);
+    try {
+        $pdo = new PDO($dsn, config('db_user'), config('db_pass'), [
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            // Real server-side prepares. Emulation would re-introduce string
+            // interpolation of values, which is the thing we are avoiding.
+            PDO::ATTR_EMULATE_PREPARES   => false,
+            PDO::ATTR_STRINGIFY_FETCHES  => false,
+        ]);
+    } catch (PDOException $e) {
+        throw new RuntimeException(
+            sprintf(
+                'Database connection failed for %s at %s:%d: %s',
+                config('db_name'),
+                config('db_host'),
+                config('db_port'),
+                $e->getMessage()
+            ),
+            (int) $e->getCode(),
+            $e
+        );
+    }
 
     return $pdo;
 }
