@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#E8880F">
+<title>Movenetics · Lead Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="logo" onclick="location.reload()" title="Reload">
+      <img src="https://moveneticsdigital.com/assets/logo-BH_m8UKl.png" alt="Movenetics Digital">
+    </div>
+    <div class="spacer"></div>
+    <div class="count mono" id="dbcount">248,179 records</div>
+    <button class="linkbtn" id="toggleSettings">Connection</button>
+  </header>
+
+  <section class="hero">
+    <h1>Find your next <span class="accent">leads</span></h1>
+    <p>Ask in plain English — describe the trade, place, and contact details you need, and we'll write the query for you.</p>
+  </section>
+
+  <div class="ask">
+    <input id="q" type="text" autocomplete="off" spellcheck="false"
+           placeholder="Ask for the leads you want — plain English">
+    <button class="go" id="go">Search</button>
+  </div>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="settings" id="settings">
+    <label class="field">
+      <span>Webhook URL</span>
+      <input id="url" type="text" spellcheck="false" placeholder="https://n8n.example.com/webhook/lead-search">
+    </label>
+    <label class="field">
+      <span>API key — sent as x-api-key</span>
+      <input id="key" type="password" spellcheck="false" placeholder="Leave empty if the webhook has no auth">
+    </label>
+    <p class="note">Saved in this browser only. Anyone who opens this page on this machine can read the key, and anyone who views the page source can see the URL — keep it on an internal host, not the public web.</p>
+  </div>
+
+  <div class="status" id="status"></div>
+
+</div>
+
+<script>
+/* ── config ─────────────────────────────────────────────────────────── */
+const DEFAULTS = {
+  url: 'https://n8n.moveneticsdigital.com/webhook/lead-search',
+  key: ''
+};
+
+const EXAMPLES = [
+  'Roofers in Oklahoma with mobile numbers and no email',
+  'How many HVAC companies are in Texas',
+  'Plumbers in Dallas',
+  'Which cities have the most home builders',
+  'Owners at Flintco'
+];
+
+/* localStorage may be blocked; fall back to memory so the page still works */
+const mem = {};
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return mem[k] ?? null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){ mem[k] = v; } }
+};
+
+const $ = id => document.getElementById(id);
+const urlEl = $('url'), keyEl = $('key'), qEl = $('q'), statusEl = $('status');
+
+urlEl.value = store.get('ls.url') || DEFAULTS.url;
+keyEl.value = store.get('ls.key') || DEFAULTS.key;
+urlEl.addEventListener('input', () => store.set('ls.url', urlEl.value.trim()));
+keyEl.addEventListener('input', () => store.set('ls.key', keyEl.value.trim()));
+
+$('toggleSettings').addEventListener('click', () => $('settings').classList.toggle('open'));
+
+EXAMPLES.forEach(text => {
+  const b = document.createElement('button');
+  b.className = 'chip';
+  b.textContent = text;
+  b.addEventListener('click', () => { qEl.value = text; run(); });
+  $('chips').appendChild(b);
+});
+
+/* ── state ──────────────────────────────────────────────────────────── */
+let rows = [], cols = [], page = 0, busy = false;
+const PER_PAGE = 50;
+
+const LABELS = {
+  business_name:'Business', primary_sector:'Trade', sectors:'All trades',
+  sectors_norm:'All trades', size_band:'Size', num_employees:'Employees',
+  contact_person:'Contacts', corporate_email:'Corporate email',
+  generic_email:'Generic email', has_email:'Email', phone:'Phone',
+  phone_type:'Line', street_address:'Address', city:'City', state:'State',
+  website:'Website', id:'ID'
+};
+const label = c => LABELS[c] || c.replace(/_/g,' ').replace(/\b\w/g, m => m.toUpperCase());
+
+/* ── run ────────────────────────────────────────────────────────────── */
+$('go').addEventListener('click', run);
+qEl.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+
+async function run(){
+  const question = qEl.value.trim();
+  if (!question || busy) return;
+
+  const endpoint = urlEl.value.trim();
+  if (!endpoint) {
+    $('settings').classList.add('open');
+    return showError('No webhook URL set', 'Add the endpoint under Connection, then search again.');
+  }
+
+  busy = true; $('go').disabled = true;
+  const started = performance.now();
+  statusEl.innerHTML = '<div class="loading"><span class="pulse"></span>Writing the query and searching 248,179 records…</div>';
+
+  const headers = { 'Content-Type': 'application/json' };
+  const key = keyEl.value.trim();
+  if (key) headers['x-api-key'] = key;
+
+  let res, body;
+  try {
+    res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ question })
+    });
+  } catch (e) {
+    busy = false; $('go').disabled = false;
+    return showError(
+      'Could not reach the webhook',
+      'The browser blocked the request or the host did not answer. In the n8n Webhook node, set <code>Allowed Origins (CORS)</code> to this page’s domain (or <code>*</code> while testing) and make sure the workflow is active.'
+    );
+  }
+
+  const raw = await res.text();
+  try { body = JSON.parse(raw); }
+  catch (e) {
+    busy = false; $('go').disabled = false;
+    return showError('The webhook did not return JSON', 'It replied with: <code>' + esc(raw.slice(0,200)) + '</code>');
+  }
+
+  busy = false; $('go').disabled = false;
+
+  if (!res.ok || body.success === false) {
+    return showError('The search failed', esc(body.error || body.message || ('HTTP ' + res.status)));
+  }
+
+  rows = Array.isArray(body) ? body : (body.data || []);
+  cols = rows.length ? Object.keys(rows[0]) : [];
+  page = 0;
+
+  render(body, Math.round(performance.now() - started));
+}
+
+/* ── render ─────────────────────────────────────────────────────────── */
+function render(body, ms){
+  if (!rows.length) {
+    statusEl.innerHTML =
+      '<div class="empty"><h3>No businesses matched</h3>' +
+      '<p>Try a wider area, or drop one of the filters — asking for a state instead of a city usually helps.</p></div>' +
+      sqlBlock(body, 0, ms);
+    wireSql();
+    return;
+  }
+
+  statusEl.innerHTML =
+    '<div class="meta">' +
+      '<span class="hits">' + rows.length.toLocaleString() + ' ' +
+        (rows.length === 1 ? 'business' : 'businesses') +
+        ' <em>· ' + (ms/1000).toFixed(1) + 's</em></span>' +
+      '<span class="spacer"></span>' +
+      (body.sql ? '<button class="linkbtn" id="sqlToggle">Show query</button>' : '') +
+      '<button class="linkbtn" id="dl">Download CSV</button>' +
+    '</div>' +
+    (body.sql ? '<div class="sqlbox mono" id="sqlbox">' + esc(body.sql) + '</div>' : '') +
+    '<div class="tablecard"><div class="scroll"><table>' +
+      '<thead><tr>' + cols.map(c => '<th>' + esc(label(c)) + '</th>').join('') + '</tr></thead>' +
+      '<tbody id="tbody"></tbody>' +
+    '</table></div><div class="pager" id="pager"></div></div>';
+
+  wireSql();
+  $('dl').addEventListener('click', downloadCsv);
+  paint();
+}
+
+function sqlBlock(body, _n, _ms){
+  if (!body.sql) return '';
+  return '<div class="meta" style="margin-top:14px"><span class="spacer"></span>' +
+         '<button class="linkbtn" id="sqlToggle">Show query</button></div>' +
+         '<div class="sqlbox mono" id="sqlbox">' + esc(body.sql) + '</div>';
+}
+function wireSql(){
+  const t = $('sqlToggle');
+  if (!t) return;
+  t.addEventListener('click', () => {
+    const box = $('sqlbox');
+    box.classList.toggle('open');
+    t.textContent = box.classList.contains('open') ? 'Hide query' : 'Show query';
+  });
+}
+
+function paint(){
+  const start = page * PER_PAGE;
+  const slice = rows.slice(start, start + PER_PAGE);
+
+  $('tbody').innerHTML = slice.map(r =>
+    '<tr>' + cols.map(c => cell(c, r[c])).join('') + '</tr>'
+  ).join('');
+
+  const pages = Math.ceil(rows.length / PER_PAGE);
+  $('pager').innerHTML =
+    '<span class="range mono">' + (start + 1).toLocaleString() + '–' +
+      Math.min(start + PER_PAGE, rows.length).toLocaleString() +
+      ' of ' + rows.length.toLocaleString() + '</span>' +
+    '<span class="spacer"></span>' +
+    '<button class="pg" id="prev"' + (page === 0 ? ' disabled' : '') + '>Previous</button>' +
+    '<button class="pg" id="next"' + (page >= pages - 1 ? ' disabled' : '') + '>Next</button>';
+
+  $('prev').addEventListener('click', () => { if (page > 0) { page--; paint(); scrollTop(); } });
+  $('next').addEventListener('click', () => { if (page < pages - 1) { page++; paint(); scrollTop(); } });
+}
+function scrollTop(){
+  document.querySelector('.tablecard').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function cell(col, val){
+  const v = (val === null || val === undefined) ? '' : String(val);
+  if (!v.trim()) return '<td><span class="blank">—</span></td>';
+
+  if (col === 'phone') {
+    const digits = v.replace(/\D/g,'');
+    return '<td class="tel"><a href="tel:' + digits + '" class="mono">' + esc(v) + '</a></td>';
+  }
+  if (col === 'phone_type') {
+    const k = v.toLowerCase().includes('mobile') ? 'mobile'
+            : v.toLowerCase().includes('voip')   ? 'voip' : 'fixed';
+    return '<td><span class="line"><span class="dot ' + k + '"></span>' + esc(v) + '</span></td>';
+  }
+  if (col === 'website') {
+    const href = /^https?:\/\//i.test(v) ? v : 'https://' + v;
+    const shown = v.replace(/^https?:\/\/(www\.)?/i,'').split('/')[0];
+    return '<td class="web"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(shown) + '</a></td>';
+  }
+  if (col === 'state') return '<td class="st mono">' + esc(v) + '</td>';
+  if (col === 'business_name') return '<td class="name">' + esc(v) + '</td>';
+  if (col === 'id') return '<td class="mono st">' + esc(v) + '</td>';
+  return '<td>' + esc(v) + '</td>';
+}
+
+/* ── csv, built in the browser from the rows already loaded ─────────── */
+function downloadCsv(){
+  const q = s => '"' + String(s ?? '').replace(/"/g,'""') + '"';
+  const csv = [cols.map(q).join(',')]
+    .concat(rows.map(r => cols.map(c => q(r[c])).join(',')))
+    .join('\r\n');
+
+  const blob = new Blob(['﻿' + csv], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'leads-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ── util ───────────────────────────────────────────────────────────── */
+function showError(title, detail){
+  statusEl.innerHTML = '<div class="err"><h3>' + title + '</h3><p>' + detail + '</p></div>';
+}
+function esc(s){
+  return String(s).replace(/[&<>"']/g, m =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+</script>
+</body>
+</html>
