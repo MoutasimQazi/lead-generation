@@ -107,6 +107,7 @@ input{font-family:inherit}
 }
 .logo{display:flex;align-items:center;gap:10px;min-width:0;cursor:pointer;flex:none}
 .logo img{height:30px;width:auto;display:block}
+:root[data-theme="dark"] .logo img{content:url('logo-dark.png?v=20260823')}
 .theme-toggle{
   background:var(--sunken);border:1px solid var(--line);color:var(--ink-2);
   border-radius:var(--r-pill);padding:8px 13px;font-size:11.5px;font-weight:700;
