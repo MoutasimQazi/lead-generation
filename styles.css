@@ -107,9 +107,8 @@ input{font-family:inherit}
 }
 .logo{display:flex;align-items:center;gap:10px;min-width:0;cursor:pointer;flex:none}
 .logo img{height:30px;width:auto;display:block}
-/* the wordmark is black on transparent — keep a light backing behind it */
-:root[data-theme="dark"] .logo{background:#fff;padding:5px 9px;border-radius:var(--r-pill)}
-:root[data-theme="dark"] .logo img{height:24px}
+/* Keep the transparent logo readable in dark mode without adding a backing box. */
+:root[data-theme="dark"] .logo img{filter:brightness(0) invert(1)}
 .theme-toggle{
   background:var(--sunken);border:1px solid var(--line);color:var(--ink-2);
   border-radius:var(--r-pill);padding:8px 13px;font-size:11.5px;font-weight:700;
@@ -374,8 +373,6 @@ body.centered{display:flex;align-items:center;justify-content:center;padding:24p
   margin:0;cursor:default;
 }
 .authcard .logo img{height:28px;max-width:100%}
-:root[data-theme="dark"] .authcard .logo{padding:5px 10px}
-:root[data-theme="dark"] .authcard .logo img{height:24px}
 .authhead{margin-bottom:22px}
 .authhead h1{margin:0 0 6px;font-size:22px;font-weight:700;letter-spacing:-.02em}
 .authhead p{margin:0;font-size:13.5px;color:var(--ink-2)}
