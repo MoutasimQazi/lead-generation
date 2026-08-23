@@ -116,7 +116,7 @@ input{font-family:inherit}
   white-space:nowrap;transition:border-color .15s,color .15s,background .15s;
 }
 .theme-toggle:hover{border-color:var(--primary);color:var(--primary-ink);background:var(--primary-soft)}
-.auth-theme{position:absolute;top:18px;right:18px}
+.auth-theme{flex:none}
 .authcard{position:relative}
 .navitem{
   background:none;border:none;color:var(--ink);text-decoration:none;
@@ -365,7 +365,17 @@ body.centered{display:flex;align-items:center;justify-content:center;padding:24p
   border:1px solid var(--line);border-left:4px solid var(--bar);
   border-radius:var(--r-card);box-shadow:var(--shadow-lg);padding:30px 28px;
 }
-.authcard .logo{justify-content:center;margin-bottom:22px;cursor:default}
+.authbar{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  margin-bottom:26px;
+}
+.authcard .logo{
+  display:inline-flex;width:max-content;justify-content:flex-start;
+  margin:0;cursor:default;
+}
+.authcard .logo img{height:28px;max-width:100%}
+:root[data-theme="dark"] .authcard .logo{padding:5px 10px}
+:root[data-theme="dark"] .authcard .logo img{height:24px}
 .authhead{margin-bottom:22px}
 .authhead h1{margin:0 0 6px;font-size:22px;font-weight:700;letter-spacing:-.02em}
 .authhead p{margin:0;font-size:13.5px;color:var(--ink-2)}
@@ -582,6 +592,8 @@ tbody tr.rowactions td:last-child{white-space:nowrap}
 
 @media (max-width:640px){
   .authcard{padding:24px 20px}
+  .authbar{gap:10px;margin-bottom:24px}
+  .auth-theme{padding:8px 11px}
   .kv{gap:16px}
   .dscard{padding:13px 15px}
   .toolbar input[type=search],.toolbar input[type=text]{min-width:0;flex:1}
