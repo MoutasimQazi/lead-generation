@@ -54,7 +54,7 @@
   <div id="status"></div>
 </div>
 
-<script src="app.js?v=20260822-4"></script>
+<script src="app.js?v=20260824-1"></script>
 <script>
 /* Types the admin may choose. Kept in step with column_type_assert() on the
    server — anything not on this list is rejected there anyway. */
@@ -151,7 +151,7 @@ $('analyse').addEventListener('click', async () => {
   if ($('folder').value) fd.append('folder_id', $('folder').value);
 
   try {
-    stage = await apiPost('api/uploads/stage', fd);
+    stage = await apiPost('api/uploads/stage', fd, { timeoutMs: 600000 });
     renderConfirm();
   } catch (err) {
     showError($('status'), 'Could not read those files', esc(err.message));

@@ -112,6 +112,9 @@ function initials(name) {
 
 async function api(method, path, body, opts = {}) {
   const headers = {};
+  const timeoutMs = opts.timeoutMs ?? 150000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   if (session.csrf) headers['X-CSRF-Token'] = session.csrf;
 
@@ -123,18 +126,26 @@ async function api(method, path, body, opts = {}) {
   }
 
   let res;
+  let text;
   try {
     res = await fetch(path, {
       method,
       headers,
       body: payload,
+      signal: controller.signal,
       credentials: 'same-origin',
       // API responses describe mutable database state. Reusing a cached GET
       // after PATCH made successful edits appear to revert immediately.
       cache: 'no-store',
     });
+    text = await res.text();
   } catch (e) {
+    if (e && e.name === 'AbortError') {
+      throw new Error('The server did not respond within ' + Math.ceil(timeoutMs / 1000) + ' seconds. Please try again.');
+    }
     throw new Error('Could not reach the server. Check your connection and try again.');
+  } finally {
+    clearTimeout(timeout);
   }
 
   // Session gone or expired: bounce to login, preserving where they were.
@@ -143,7 +154,6 @@ async function api(method, path, body, opts = {}) {
     throw new Error('Signed out.');
   }
 
-  const text = await res.text();
   let data;
 
   try {

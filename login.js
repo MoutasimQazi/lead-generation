@@ -23,7 +23,7 @@ function safeNext() {
 
 (async () => {
   try {
-    const me = await apiGet('api/auth/me', { noRedirect: true });
+    const me = await apiGet('api/auth/me', { noRedirect: true, timeoutMs: 15000 });
     if (me.authenticated) location.replace(safeNext());
   } catch (e) {
     /* Stay on the form so the sign-in request can show its error. */
@@ -44,7 +44,7 @@ $('form').addEventListener('submit', async (e) => {
     await apiPost('api/auth/login', {
       email: $('email').value.trim(),
       password: $('password').value,
-    }, { noRedirect: true });
+    }, { noRedirect: true, timeoutMs: 15000 });
 
     location.href = safeNext();
   } catch (err) {
