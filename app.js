@@ -191,7 +191,7 @@ async function requireSession({ page = '', adminOnly = false } = {}) {
   let data;
 
   try {
-    data = await apiGet('api/auth/me', { noRedirect: true });
+    data = await apiGet('api/auth/me', { noRedirect: true, timeoutMs: 15000 });
   } catch (e) {
     // A throw here is a server fault, not a signed-out session: /api/auth/me
     // answers 200 with authenticated:false when nobody is signed in. Bouncing
