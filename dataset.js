@@ -3,6 +3,8 @@ let ds = null;
 let columns = [];
 let page = 1;
 let per = 50;
+let rowCursors = [0];
+let cursorIndex = 0;
 let term = '';
 let sort = '';
 let dir = 'asc';
@@ -246,7 +248,7 @@ async function loadRows() {
 
   $('status').innerHTML = '<div class="loading"><span class="pulse"></span>Loading rows...</div>';
   const params = new URLSearchParams({
-    page, per, q: term, sort, dir,
+    page, per, after: rowCursors[cursorIndex] || 0, q: term, sort, dir,
     filters: JSON.stringify(filters),
   });
 
@@ -302,6 +304,7 @@ function renderRows(data) {
     if (sort === column) dir = dir === 'asc' ? 'desc' : 'asc';
     else { sort = column; dir = 'asc'; }
     page = 1;
+    rowCursors = [0]; cursorIndex = 0;
     loadRows();
   }));
 
@@ -313,6 +316,7 @@ function renderRows(data) {
       if (value) filters[column] = value;
       else delete filters[column];
       page = 1;
+      rowCursors = [0]; cursorIndex = 0;
       loadRows();
     }, 300);
   }));
@@ -331,12 +335,22 @@ function renderPager(data) {
     '<span class="range mono">' + fmt((data.page - 1) * data.per + 1) + '–' +
       fmt(Math.min(data.page * data.per, data.total)) + ' of ' + fmt(data.total) + '</span>' +
     '<span class="spacer"></span>' +
-    '<button class="pg" id="prev"' + (data.page <= 1 ? ' disabled' : '') + '>Previous</button>' +
-    '<span class="range mono">' + data.page + ' / ' + data.pages + '</span>' +
-    '<button class="pg" id="next"' + (data.page >= data.pages ? ' disabled' : '') + '>Next</button>';
+    '<button class="pg" id="prev"' + ((data.cursor_mode ? cursorIndex <= 0 : data.page <= 1) ? ' disabled' : '') + '>Previous</button>' +
+    '<span class="range mono">Page ' + (data.cursor_mode ? cursorIndex + 1 : data.page) + '</span>' +
+    '<button class="pg" id="next"' + (!data.has_more ? ' disabled' : '') + '>Next</button>';
 
-  $('prev').addEventListener('click', () => { if (page > 1) { page--; loadRows(); } });
-  $('next').addEventListener('click', () => { if (page < data.pages) { page++; loadRows(); } });
+  $('prev').addEventListener('click', () => {
+    if (data.cursor_mode && cursorIndex > 0) { cursorIndex--; page = cursorIndex + 1; loadRows(); }
+    else if (!data.cursor_mode && page > 1) { page--; loadRows(); }
+  });
+  $('next').addEventListener('click', () => {
+    if (data.cursor_mode && data.has_more && data.next_cursor) {
+      rowCursors[cursorIndex + 1] = data.next_cursor;
+      cursorIndex++;
+      page = cursorIndex + 1;
+      loadRows();
+    } else if (!data.cursor_mode && data.has_more) { page++; loadRows(); }
+  });
 }
 
 $('q').addEventListener('input', event => {
@@ -344,6 +358,7 @@ $('q').addEventListener('input', event => {
   window.datasetSearchTimer = setTimeout(() => {
     term = event.target.value.trim();
     page = 1;
+    rowCursors = [0]; cursorIndex = 0;
     loadRows();
   }, 300);
 });

@@ -134,6 +134,31 @@ function migration_statements(): array
                 REFERENCES datasets(id) ON DELETE CASCADE
             ) $charset",
 
+        'bulk_import_jobs' => "
+            CREATE TABLE IF NOT EXISTS bulk_import_jobs (
+              id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+              file_name     VARCHAR(255) NOT NULL,
+              file_path     VARCHAR(700) NOT NULL,
+              file_size     BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              file_mtime    BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              dataset_id    INT UNSIGNED NULL,
+              queued_by     INT UNSIGNED NULL,
+              status        ENUM('discovered','queued','running','done','failed') NOT NULL DEFAULT 'discovered',
+              rows_done     BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              error_message TEXT NULL,
+              created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              started_at    TIMESTAMP NULL DEFAULT NULL,
+              finished_at   TIMESTAMP NULL DEFAULT NULL,
+              updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              UNIQUE KEY uq_bulk_file_version (file_name, file_size, file_mtime),
+              KEY idx_bulk_status (status, id),
+              CONSTRAINT fk_bulk_dataset FOREIGN KEY (dataset_id)
+                REFERENCES datasets(id) ON DELETE SET NULL,
+              CONSTRAINT fk_bulk_user FOREIGN KEY (queued_by)
+                REFERENCES app_users(id) ON DELETE SET NULL
+            ) $charset",
+
         'audit_log' => "
             CREATE TABLE IF NOT EXISTS audit_log (
               id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -224,7 +249,7 @@ function run_migrations(): array
  */
 function ensure_management_schema(): void
 {
-    $required = ['folders', 'datasets', 'dataset_assignments', 'upload_stages', 'import_jobs', 'audit_log'];
+    $required = ['folders', 'datasets', 'dataset_assignments', 'upload_stages', 'import_jobs', 'bulk_import_jobs', 'audit_log'];
     $missing  = false;
 
     foreach ($required as $table) {

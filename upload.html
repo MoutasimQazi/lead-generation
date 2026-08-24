@@ -51,6 +51,18 @@
   <!-- step 3 ─────────────────────────────────────────────────────────── -->
   <section id="step-import" hidden></section>
 
+  <section class="settings open" id="largeImports" style="margin-top:28px">
+    <div class="sechead">
+      <div>
+        <h2>Large server imports</h2>
+        <p class="muted" style="margin:4px 0 0">For multi-GB CSV files uploaded by SFTP to <span class="mono">var/inbox</span>.</p>
+      </div>
+      <span class="spacer"></span>
+      <button class="btn btn-sm" id="refreshLarge">Refresh inbox</button>
+    </div>
+    <div id="largeImportList"><p class="muted">Checking the server inbox…</p></div>
+  </section>
+
   <div id="status"></div>
 </div>
 
@@ -73,8 +85,49 @@ let picked = [], stage = null;
 
 (async () => {
   await requireSession({ page: 'upload', adminOnly: true });
-  await loadFolders();
+  await Promise.all([loadFolders(), loadLargeImports()]);
 })();
+
+async function loadLargeImports() {
+  const host = $('largeImportList');
+  try {
+    const { jobs } = await apiGet('api/large-imports');
+    if (!jobs.length) {
+      host.innerHTML = '<div class="empty" style="padding:28px 20px"><h3>No CSV files found</h3>' +
+        '<p>Upload large comma-delimited CSV files to <span class="mono">var/inbox</span> using SFTP, then refresh.</p></div>';
+      return;
+    }
+    host.innerHTML = '<div class="tablecard"><div class="scroll"><table><thead><tr>' +
+      '<th>File</th><th>Size</th><th>Status</th><th>Rows</th><th></th></tr></thead><tbody>' +
+      jobs.map(job => '<tr><td>' + esc(job.file_name) +
+        (job.error ? '<div class="muted" style="color:var(--danger)">' + esc(job.error) + '</div>' : '') +
+        '</td><td class="mono">' + bytes(job.file_size) + '</td><td><span class="tag">' + esc(job.status) +
+        '</span></td><td class="mono">' + fmt(job.rows_done) + '</td><td>' +
+        (job.status === 'discovered' || (job.status === 'failed' && !job.dataset_id)
+          ? '<button class="btn btn-primary btn-sm" data-queue-large="' + job.id + '">Queue</button>'
+          : job.dataset_id ? '<a class="btn btn-sm" href="dataset.html?id=' + job.dataset_id + '">View</a>' : '') +
+        '</td></tr>').join('') + '</tbody></table></div></div>';
+
+    $$('[data-queue-large]').forEach(button => button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        await apiPost('api/large-imports/' + button.dataset.queueLarge + '/queue', {});
+        toast('Large import queued.');
+        await loadLargeImports();
+      } catch (err) {
+        toast(err.message, true);
+        button.disabled = false;
+      }
+    }));
+  } catch (err) {
+    host.innerHTML = '<div class="err"><h3>Could not check the inbox</h3><p>' + esc(err.message) + '</p></div>';
+  }
+}
+
+$('refreshLarge').addEventListener('click', loadLargeImports);
+setInterval(() => {
+  if (!document.hidden && session.user && !$('step-pick').hidden) loadLargeImports();
+}, 15000);
 
 async function loadFolders() {
   try {

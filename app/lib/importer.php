@@ -67,7 +67,11 @@ function import_next_job(int $datasetId): ?array
  *
  * @return array progress for the caller: rows_done, done, percent, message
  */
-function import_run_slice(array $job): array
+function import_run_slice(
+    array $job,
+    bool $deleteOnDone = true,
+    bool $countTableOnComplete = true
+): array
 {
     $datasetId = (int) $job['dataset_id'];
     $dataset   = db_one('SELECT * FROM datasets WHERE id = ?', [$datasetId]);
@@ -206,11 +210,11 @@ function import_run_slice(array $job): array
         [$offset, $rowsDone, $skipped, $truncated, $eof ? 'done' : 'running', (int) $job['id']]
     );
 
-    if ($eof) {
+    if ($eof && $deleteOnDone) {
         @unlink($path);
     }
 
-    import_sync_dataset($datasetId);
+    import_sync_dataset($datasetId, $countTableOnComplete);
 
     return import_progress($datasetId);
 }
@@ -254,7 +258,7 @@ function import_fail(array $job, string $message): void
 }
 
 /** Recomputes dataset row_count and status from its jobs. */
-function import_sync_dataset(int $datasetId): void
+function import_sync_dataset(int $datasetId, bool $countTableOnComplete = true): void
 {
     $dataset = db_one('SELECT table_name FROM datasets WHERE id = ?', [$datasetId]);
 
@@ -286,9 +290,12 @@ function import_sync_dataset(int $datasetId): void
     $allDone = $jobs === 0 || $done === $jobs;
 
     if ($allDone) {
-        // Authoritative count straight from the table, rather than trusting the
-        // running tally.
-        $count = (int) db_value('SELECT COUNT(*) FROM ' . qi($dataset['table_name']), [], 0);
+        // Browser imports are small enough for an authoritative count. The
+        // background path can cover 100 GB, so it trusts the durable per-job
+        // counter rather than scanning the completed physical table again.
+        $count = $countTableOnComplete
+            ? (int) db_value('SELECT COUNT(*) FROM ' . qi($dataset['table_name']), [], 0)
+            : (int) ($stats['rows_done'] ?? 0);
 
         db_exec(
             'UPDATE datasets SET status = "ready", row_count = ?, error_message = NULL WHERE id = ?',

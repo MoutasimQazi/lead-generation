@@ -144,6 +144,8 @@ const BUILTIN_CONFIG = [
     'IMPORT_BATCH_SIZE'       => '500',
     'IMPORT_ROWS_PER_REQUEST' => '20000',
     'INFER_SAMPLE_ROWS'       => '500',
+    'LARGE_IMPORT_DIR'        => './var/inbox',
+    'LARGE_IMPORT_ARCHIVE_DIR'=> './var/imported',
 ];
 
 function build_config(): array
@@ -179,6 +181,16 @@ function build_config(): array
     $uploadDir = (string) $get('UPLOAD_DIR', './var/uploads');
     if (!str_starts_with($uploadDir, '/') && !preg_match('/^[A-Za-z]:/', $uploadDir)) {
         $uploadDir = app_root() . '/' . ltrim($uploadDir, './');
+    }
+
+    $largeImportDir = (string) $get('LARGE_IMPORT_DIR', './var/inbox');
+    if (!str_starts_with($largeImportDir, '/') && !preg_match('/^[A-Za-z]:/', $largeImportDir)) {
+        $largeImportDir = app_root() . '/' . ltrim($largeImportDir, './');
+    }
+
+    $largeArchiveDir = (string) $get('LARGE_IMPORT_ARCHIVE_DIR', './var/imported');
+    if (!str_starts_with($largeArchiveDir, '/') && !preg_match('/^[A-Za-z]:/', $largeArchiveDir)) {
+        $largeArchiveDir = app_root() . '/' . ltrim($largeArchiveDir, './');
     }
 
     // Compatibility migration: older deployments commonly still have the
@@ -217,6 +229,8 @@ function build_config(): array
         'import_batch'      => max(50, (int) $get('IMPORT_BATCH_SIZE', '500')),
         'import_per_request' => max(500, (int) $get('IMPORT_ROWS_PER_REQUEST', '20000')),
         'infer_sample'      => max(20, (int) $get('INFER_SAMPLE_ROWS', '500')),
+        'large_import_dir'  => $largeImportDir,
+        'large_archive_dir' => $largeArchiveDir,
     ];
 }
 

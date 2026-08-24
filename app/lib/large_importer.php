@@ -1,0 +1,261 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../migrations.php';
+require_once __DIR__ . '/identifiers.php';
+require_once __DIR__ . '/inference.php';
+require_once __DIR__ . '/importer.php';
+
+/** SFTP inbox for files too large to send through PHP-FPM. */
+function large_import_root(): string
+{
+    $dir = (string) config('large_import_dir');
+    if (!is_dir($dir) && !@mkdir($dir, 0770, true) && !is_dir($dir)) {
+        throw new RuntimeException('Could not create the large-import inbox.');
+    }
+    return rtrim(str_replace('\\', '/', $dir), '/');
+}
+
+function large_archive_root(): string
+{
+    $dir = (string) config('large_archive_dir');
+    if (!is_dir($dir) && !@mkdir($dir, 0770, true) && !is_dir($dir)) {
+        throw new RuntimeException('Could not create the completed-import archive.');
+    }
+    return rtrim(str_replace('\\', '/', $dir), '/');
+}
+
+/** Registers stable CSV files found in the inbox. Files still being copied are skipped. */
+function large_import_scan(): int
+{
+    $root = large_import_root();
+    $added = 0;
+
+    foreach (glob($root . '/*') ?: [] as $path) {
+        if (!is_file($path) || strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'csv') {
+            continue;
+        }
+
+        $name = basename($path);
+        $size = (int) filesize($path);
+        $mtime = (int) filemtime($path);
+
+        // SFTP updates mtime while writing. Waiting 60 seconds prevents the
+        // worker from opening a partially transferred multi-gigabyte file.
+        if ($size <= 0 || $mtime > time() - 60) {
+            continue;
+        }
+
+        $exists = db_one(
+            'SELECT id FROM bulk_import_jobs WHERE file_name = ? AND file_size = ? AND file_mtime = ?',
+            [$name, $size, $mtime]
+        );
+        if ($exists) {
+            continue;
+        }
+
+        $inserted = db_exec(
+            'INSERT IGNORE INTO bulk_import_jobs (file_name, file_path, file_size, file_mtime)
+             VALUES (?, ?, ?, ?)',
+            [$name, str_replace('\\', '/', $path), $size, $mtime]
+        );
+        $added += $inserted > 0 ? 1 : 0;
+    }
+
+    return $added;
+}
+
+function large_import_jobs(): array
+{
+    large_import_scan();
+    return db_all(
+        'SELECT b.*, d.display_name AS dataset_name
+           FROM bulk_import_jobs b
+           LEFT JOIN datasets d ON d.id = b.dataset_id
+          ORDER BY b.id DESC LIMIT 200'
+    );
+}
+
+function large_import_queue(int $id, int $userId): void
+{
+    $job = db_one('SELECT * FROM bulk_import_jobs WHERE id = ?', [$id]);
+    if (!$job) {
+        throw new RuntimeException('That inbox file no longer exists.');
+    }
+    if ($job['status'] !== 'discovered' && !($job['status'] === 'failed' && empty($job['dataset_id']))) {
+        throw new RuntimeException('That file is already queued or imported.');
+    }
+
+    $path = large_import_safe_path((string) $job['file_path']);
+    if (!is_file($path)) {
+        throw new RuntimeException('The inbox file is missing. Upload it again by SFTP.');
+    }
+
+    db_exec(
+        'UPDATE bulk_import_jobs
+            SET status = "queued", queued_by = ?, error_message = NULL,
+                started_at = NULL, finished_at = NULL
+          WHERE id = ?',
+        [$userId, $id]
+    );
+}
+
+/** Ensures a DB path can never escape the configured inbox. */
+function large_import_safe_path(string $path): string
+{
+    $root = realpath(large_import_root());
+    $real = realpath($path);
+    if ($root === false || $real === false) {
+        throw new RuntimeException('Could not locate the inbox file.');
+    }
+
+    $root = rtrim(str_replace('\\', '/', $root), '/') . '/';
+    $real = str_replace('\\', '/', $real);
+    if (!str_starts_with($real, $root) || dirname($real) . '/' !== $root) {
+        throw new RuntimeException('The queued path is outside the import inbox.');
+    }
+    return $real;
+}
+
+function large_import_prepare(array $bulk): array
+{
+    if (!empty($bulk['dataset_id'])) {
+        $job = import_next_job((int) $bulk['dataset_id']);
+        if (!$job) {
+            throw new RuntimeException('The resumable import job is missing.');
+        }
+        return $job;
+    }
+
+    $path = large_import_safe_path((string) $bulk['file_path']);
+    $fh = fopen($path, 'rb');
+    if (!$fh) {
+        throw new RuntimeException('Could not open the inbox CSV.');
+    }
+    $header = fgetcsv($fh, 0, ',');
+    fclose($fh);
+    if ($header === false || $header === [null]) {
+        throw new RuntimeException('The inbox CSV is empty or has no header row.');
+    }
+
+    $headers = sanitize_headers(array_map(static fn($v) => (string) $v, $header));
+    $existing = array_map(
+        static fn(array $r): string => (string) $r['table_name'],
+        db_all('SELECT table_name FROM datasets')
+    );
+    $table = ident_table_name((string) $bulk['file_name'], $existing);
+    $display = mb_substr(pathinfo((string) $bulk['file_name'], PATHINFO_FILENAME), 0, 190);
+
+    $columns = [];
+    $defs = [
+        qsys('_row_id') . ' BIGINT UNSIGNED NOT NULL AUTO_INCREMENT',
+        qsys('_source_file') . ' VARCHAR(255) NOT NULL',
+        qsys('_imported_at') . ' TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    ];
+    foreach ($headers as $i => $descriptor) {
+        $name = ident_assert((string) $descriptor['name']);
+        $columns[] = ['name' => $name, 'label' => (string) ($header[$i] ?: $name), 'type' => 'TEXT'];
+        $defs[] = qi($name) . ' TEXT NULL';
+    }
+    $defs[] = 'PRIMARY KEY (' . qsys('_row_id') . ')';
+
+    db()->exec(
+        'CREATE TABLE ' . qi($table) . ' (' . implode(', ', $defs)
+        . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
+    try {
+        db_exec(
+            'INSERT INTO datasets
+               (table_name, display_name, source_files, columns_json, status, created_by)
+             VALUES (?, ?, ?, ?, "importing", ?)',
+            [
+                $table,
+                $display,
+                json_encode([['filename' => $bulk['file_name'], 'uploaded_at' => date('c'), 'uploaded_by' => 'SFTP inbox']]),
+                json_encode($columns, JSON_UNESCAPED_SLASHES),
+                $bulk['queued_by'] ?: null,
+            ]
+        );
+        $datasetId = db_insert_id();
+        $mapping = array_map(static fn(array $c, int $i): array => [
+            'index' => $i, 'name' => $c['name'], 'type' => 'TEXT',
+        ], $columns, array_keys($columns));
+        import_create_job($datasetId, $path, (string) $bulk['file_name'], $mapping);
+        db_exec(
+            'UPDATE bulk_import_jobs
+                SET dataset_id = ?, status = "running", started_at = NOW()
+              WHERE id = ?',
+            [$datasetId, (int) $bulk['id']]
+        );
+    } catch (Throwable $e) {
+        db()->exec('DROP TABLE IF EXISTS ' . qi($table));
+        throw $e;
+    }
+
+    return import_next_job($datasetId)
+        ?? throw new RuntimeException('Could not create the resumable import job.');
+}
+
+/** Runs queued work for a bounded duration; safe to call every minute from cron. */
+function large_import_work(int $budgetSeconds = 50): array
+{
+    large_import_scan();
+    $started = microtime(true);
+    $bulk = db_one(
+        'SELECT * FROM bulk_import_jobs
+          WHERE status IN ("running", "queued")
+          ORDER BY FIELD(status, "running", "queued"), id LIMIT 1'
+    );
+    if (!$bulk) {
+        return ['worked' => false, 'message' => 'No queued large imports.'];
+    }
+
+    try {
+        do {
+            $job = large_import_prepare($bulk);
+            $progress = import_run_slice($job, false, false);
+            db_exec(
+                'UPDATE bulk_import_jobs SET status = "running", rows_done = ? WHERE id = ?',
+                [(int) $progress['rows'], (int) $bulk['id']]
+            );
+            if ($progress['done']) {
+                if ($progress['status'] === 'failed') {
+                    throw new RuntimeException((string) ($progress['error'] ?? 'Import failed.'));
+                }
+                $source = large_import_safe_path((string) $bulk['file_path']);
+                $target = large_archive_root() . '/' . (int) $bulk['id'] . '-' . basename($source);
+                $archiveWarning = null;
+                if (!@rename($source, $target)) {
+                    $archiveWarning = 'Import finished, but the source file could not be moved to var/imported.';
+                }
+                db_exec(
+                    'UPDATE bulk_import_jobs
+                        SET status = "done", rows_done = ?, error_message = ?, finished_at = NOW()
+                      WHERE id = ?',
+                    [(int) $progress['rows'], $archiveWarning, (int) $bulk['id']]
+                );
+                return ['worked' => true, 'done' => true, 'progress' => $progress];
+            }
+            $bulk = db_one('SELECT * FROM bulk_import_jobs WHERE id = ?', [(int) $bulk['id']]) ?: $bulk;
+        } while (microtime(true) - $started < max(5, $budgetSeconds));
+
+        return ['worked' => true, 'done' => false, 'progress' => $progress];
+    } catch (Throwable $e) {
+        db_exec(
+            'UPDATE bulk_import_jobs
+                SET status = "failed", error_message = ?, finished_at = NOW()
+              WHERE id = ?',
+            [mb_substr($e->getMessage(), 0, 1000), (int) $bulk['id']]
+        );
+        if (!empty($bulk['dataset_id'])) {
+            db_exec(
+                'UPDATE datasets SET status = "failed", error_message = ? WHERE id = ?',
+                [mb_substr($e->getMessage(), 0, 1000), (int) $bulk['dataset_id']]
+            );
+        }
+        throw $e;
+    }
+}

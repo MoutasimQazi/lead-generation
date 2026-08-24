@@ -163,6 +163,46 @@ Change it in cPanel → MySQL Databases, update `.env`, reload the page.
 
 ## Testing it works
 
+## Large imports (multi-GB and 100 GB collections)
+
+Do not send multi-GB files through the browser. Upload comma-delimited UTF-8
+CSV files with SFTP into:
+
+```text
+<document root>/var/inbox/
+```
+
+Files must have a header row and must finish uploading at least 60 seconds
+before they appear in the Upload page. The worker deliberately skips newer
+files so it cannot ingest an incomplete SFTP transfer.
+
+Run the migration once after deploying this version:
+
+```bash
+php app/scripts/migrate.php
+```
+
+In cPanel → Cron Jobs, run the resumable worker every minute (replace the path
+with the account's real document root):
+
+```cron
+* * * * * /usr/local/bin/php /home/ACCOUNT/public_html/lead/app/scripts/bulk_import_worker.php 50 >> /home/ACCOUNT/large-import.log 2>&1
+```
+
+The final `50` is the maximum number of seconds one cron invocation works.
+An advisory MariaDB lock prevents overlapping workers. Progress and the byte
+offset are committed after each database batch, so a process kill or server
+restart resumes rather than starting over. Completed source files are moved to
+`var/imported/`; failed files remain in `var/inbox/` for inspection and retry.
+
+Large inbox imports intentionally accept CSV only. XLSX is a compressed,
+non-resumable container and can expand many times beyond its upload size.
+Export spreadsheets to CSV before SFTP upload.
+
+For a 100 GB collection, provision enough space for both MariaDB and the source
+archive. Keep `var/inbox` and `var/imported` outside backups if the same source
+files are already backed up elsewhere.
+
 **Libraries** — run on the server; these two carry the security weight:
 
 ```bash
