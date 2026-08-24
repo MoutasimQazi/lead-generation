@@ -153,18 +153,34 @@ function excel_serial_to_date(float $serial, bool $withTime): string
     return $dt->format($withTime ? 'Y-m-d H:i:s' : 'Y-m-d');
 }
 
-/** Reads sharedStrings.xml into an indexed array. */
-function xlsx_shared_strings(ZipArchive $zip): array
+/** Opens one XML entry inside an XLSX archive without expanding it in memory. */
+function xlsx_xml_reader(string $archivePath, string $entry): XMLReader
 {
-    $xml = $zip->getFromName('xl/sharedStrings.xml');
+    $path = realpath($archivePath);
 
-    if ($xml === false) {
+    if ($path === false) {
+        throw new RuntimeException('Could not locate the uploaded spreadsheet.');
+    }
+
+    $reader = new XMLReader();
+    $uri = 'zip://' . str_replace('\\', '/', $path) . '#' . ltrim($entry, '/');
+
+    if (!$reader->open($uri, null, LIBXML_NONET | LIBXML_COMPACT)) {
+        throw new RuntimeException('Could not stream data from the uploaded spreadsheet.');
+    }
+
+    return $reader;
+}
+
+/** Reads sharedStrings.xml into an indexed array while streaming its XML. */
+function xlsx_shared_strings(string $archivePath, bool $hasSharedStrings): array
+{
+    if (!$hasSharedStrings) {
         return [];
     }
 
     $strings = [];
-    $reader  = new XMLReader();
-    $reader->XML($xml);
+    $reader  = xlsx_xml_reader($archivePath, 'xl/sharedStrings.xml');
 
     while ($reader->read()) {
         if ($reader->nodeType === XMLReader::ELEMENT && $reader->localName === 'si') {
@@ -270,38 +286,19 @@ function xlsx_to_csv(string $srcPath, string $destPath): array
         throw new RuntimeException('That .xlsx file could not be opened — it may be corrupt.');
     }
 
-    $shared    = xlsx_shared_strings($zip);
+    $hasSharedStrings = $zip->locateName('xl/sharedStrings.xml') !== false;
     $styles    = xlsx_date_styles($zip);
     $sheetPath = xlsx_first_sheet_path($zip);
+    $zip->close();
 
-    $sheetStream = $zip->getStream($sheetPath);
-
-    if (!$sheetStream) {
-        $zip->close();
-        throw new RuntimeException('Could not read the worksheet from that .xlsx file.');
-    }
-
+    $shared = xlsx_shared_strings($srcPath, $hasSharedStrings);
+    $reader = xlsx_xml_reader($srcPath, $sheetPath);
     $out = fopen($destPath, 'wb');
 
     if (!$out) {
-        $zip->close();
+        $reader->close();
         throw new RuntimeException('Could not stage the uploaded file for import.');
     }
-
-    // XMLReader cannot consume a zip stream directly, so the sheet XML is
-    // buffered once here. It is markup-heavy, but this is a one-off cost at
-    // stage time and the row loop below stays streaming.
-    $sheetXml = stream_get_contents($sheetStream);
-    fclose($sheetStream);
-    $zip->close();
-
-    if ($sheetXml === false) {
-        fclose($out);
-        throw new RuntimeException('Could not read the worksheet from that .xlsx file.');
-    }
-
-    $reader = new XMLReader();
-    $reader->XML($sheetXml);
 
     $header = null;
     $rows   = 0;

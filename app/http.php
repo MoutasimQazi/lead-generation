@@ -209,12 +209,17 @@ function install_error_handlers(): void
             error_log('[lead-site] fatal: ' . $err['message'] . ' @ ' . $err['file'] . ':' . $err['line']);
 
             if (!headers_sent()) {
-                // The usual cause here is exhausting memory_limit on a large
-                // import, so say something that points at the real fix.
+                $isStaging = str_contains((string) ($_SERVER['REQUEST_URI'] ?? ''), '/api/uploads/stage');
+                $message = $isStaging
+                    ? 'The server ran out of resources while reading the upload. '
+                        . 'For a large spreadsheet, save it as CSV and upload it again; '
+                        . 'also try uploading one file at a time.'
+                    : 'The server ran out of resources while processing that request. '
+                        . 'Try again, or ask an administrator to check the PHP error log.';
+
                 json_out([
                     'success' => false,
-                    'error'   => 'The server ran out of resources handling that request. '
-                               . 'For large imports, lower IMPORT_ROWS_PER_REQUEST in .env.',
+                    'error'   => $message,
                 ], 500);
             }
         }
