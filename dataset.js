@@ -29,7 +29,6 @@ async function loadDataset() {
     renderHead();
     if (session.user.is_admin) await loadAssignments();
     if (ds.status === 'ready') {
-      await loadFilterOptions();
       await loadRows();
     }
   } catch (err) {
@@ -347,10 +346,4 @@ $('q').addEventListener('input', event => {
     page = 1;
     loadRows();
   }, 300);
-});
-
-$('per').addEventListener('change', event => {
-  per = Number(event.target.value);
-  page = 1;
-  loadRows();
 });

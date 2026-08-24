@@ -430,7 +430,9 @@ function route_rows_list(int $id): never
         json_ok(['rows' => [], 'columns' => [], 'total' => 0, 'page' => 1, 'pages' => 1]);
     }
 
-    $per    = query_int('per', 50, 10, 200);
+    // Dataset browsing is deliberately capped at 50 rows. Larger result sets
+    // must be paged so the browser never downloads or renders the whole table.
+    $per    = query_int('per', 50, 10, 50);
     $page   = query_int('page', 1, 1, 1000000);
     $search = query_string('q');
     $sort   = query_string('sort', '', 64);
@@ -498,7 +500,11 @@ function route_rows_list(int $id): never
     }
 
     $table = qi((string) $d['table_name']);
-    $total = (int) db_value('SELECT COUNT(*) FROM ' . $table . $where, $params, 0);
+    // row_count is maintained as data is imported or edited. Reuse it for the
+    // common unfiltered view instead of scanning the physical table each time.
+    $total = $where === ''
+        ? (int) $d['row_count']
+        : (int) db_value('SELECT COUNT(*) FROM ' . $table . $where, $params, 0);
 
     $offset = ($page - 1) * $per;
 
