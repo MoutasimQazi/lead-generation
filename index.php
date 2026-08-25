@@ -168,7 +168,12 @@ function dispatch(): never
 
         $args = [];
 
-        foreach (['id', 'row', 'name', 'stage'] as $key) {
+        // Handler arguments must follow their order in the route pattern.
+        // A fixed key order reversed {stage} and {row} for chunk uploads,
+        // passing the numeric chunk index where the hexadecimal upload id was
+        // expected.
+        preg_match_all('/\{(id|row|name|stage)\}/', $pattern, $placeholders);
+        foreach ($placeholders[1] as $key) {
             if (isset($m[$key]) && $m[$key] !== '') {
                 $args[] = in_array($key, ['id', 'row'], true) ? (int) $m[$key] : $m[$key];
             }
