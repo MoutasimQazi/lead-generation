@@ -165,16 +165,21 @@ Change it in cPanel → MySQL Databases, update `.env`, reload the page.
 
 ## Large imports (multi-GB and 100 GB collections)
 
-Do not send multi-GB files through the browser. Upload comma-delimited UTF-8
-CSV files with SFTP into:
+The Upload page sends CSV and XLSX files up to 2 GB as resumable 10 MB chunks. Each
+request remains below PHP's normal upload limit; after the last chunk, the cron
+worker assembles the file and queues it automatically. Selecting the same file
+again resumes an interrupted upload from its completed chunks.
+
+SFTP remains available as a fallback. Place CSV or XLSX files into:
 
 ```text
 <document root>/var/inbox/
 ```
 
-Files must have a header row and must finish uploading at least 60 seconds
-before they appear in the Upload page. The worker deliberately skips newer
-files so it cannot ingest an incomplete SFTP transfer.
+SFTP files must finish uploading at least 60 seconds before they appear in the
+Upload page. The worker deliberately skips newer files so it cannot ingest an
+incomplete transfer. Browser-uploaded files are registered immediately after
+background assembly.
 
 Run the migration once after deploying this version:
 
@@ -195,9 +200,11 @@ offset are committed after each database batch, so a process kill or server
 restart resumes rather than starting over. Completed source files are moved to
 `var/imported/`; failed files remain in `var/inbox/` for inspection and retry.
 
-Large inbox imports intentionally accept CSV only. XLSX is a compressed,
-non-resumable container and can expand many times beyond its upload size.
-Export spreadsheets to CSV before SFTP upload.
+Large XLSX uploads are converted to CSV by the CLI worker, outside PHP-FPM.
+Conversion is streamed, but the server still needs temporary space for the
+workbook, its chunks, and the expanded CSV. CSV remains considerably faster and
+more space-efficient for very large exports. The browser uploader requires
+approximately five times the XLSX size in free disk space before it starts.
 
 For a 100 GB collection, provision enough space for both MariaDB and the source
 archive. Keep `var/inbox` and `var/imported` outside backups if the same source

@@ -146,6 +146,7 @@ const BUILTIN_CONFIG = [
     'INFER_SAMPLE_ROWS'       => '500',
     'LARGE_IMPORT_DIR'        => './var/inbox',
     'LARGE_IMPORT_ARCHIVE_DIR'=> './var/imported',
+    'CHUNK_UPLOAD_DIR'        => './var/chunks',
 ];
 
 function build_config(): array
@@ -193,6 +194,11 @@ function build_config(): array
         $largeArchiveDir = app_root() . '/' . ltrim($largeArchiveDir, './');
     }
 
+    $chunkUploadDir = (string) $get('CHUNK_UPLOAD_DIR', './var/chunks');
+    if (!str_starts_with($chunkUploadDir, '/') && !preg_match('/^[A-Za-z]:/', $chunkUploadDir)) {
+        $chunkUploadDir = app_root() . '/' . ltrim($chunkUploadDir, './');
+    }
+
     // Compatibility migration: older deployments commonly still have the
     // original endpoint in .env. Environment values outrank BUILTIN_CONFIG,
     // so changing only the built-in URL would leave production calling an
@@ -231,6 +237,7 @@ function build_config(): array
         'infer_sample'      => max(20, (int) $get('INFER_SAMPLE_ROWS', '500')),
         'large_import_dir'  => $largeImportDir,
         'large_archive_dir' => $largeArchiveDir,
+        'chunk_upload_dir'  => $chunkUploadDir,
     ];
 }
 

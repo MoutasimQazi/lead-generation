@@ -172,14 +172,105 @@ function xlsx_xml_reader(string $archivePath, string $entry): XMLReader
     return $reader;
 }
 
-/** Reads sharedStrings.xml into an indexed array while streaming its XML. */
-function xlsx_shared_strings(string $archivePath, bool $hasSharedStrings): array
+/** Disk-backed random-access store for XLSX shared strings. */
+final class XlsxSharedStrings implements ArrayAccess
 {
-    if (!$hasSharedStrings) {
-        return [];
+    private mixed $indexHandle;
+    private mixed $dataHandle;
+    private string $indexPath;
+    private string $dataPath;
+    private int $count = 0;
+
+    public function __construct(string $directory)
+    {
+        $token = bin2hex(random_bytes(8));
+        $this->indexPath = rtrim($directory, '/\\') . '/.xlsx-strings-' . $token . '.idx';
+        $this->dataPath = rtrim($directory, '/\\') . '/.xlsx-strings-' . $token . '.dat';
+        $this->indexHandle = fopen($this->indexPath, 'w+b');
+        $this->dataHandle = fopen($this->dataPath, 'w+b');
+        if (!$this->indexHandle || !$this->dataHandle) {
+            $this->close();
+            throw new RuntimeException('Could not create XLSX conversion scratch files.');
+        }
     }
 
-    $strings = [];
+    public function add(string $value): void
+    {
+        $offset = ftell($this->dataHandle);
+        if ($offset === false
+            || fwrite($this->indexHandle, pack('J', $offset)) !== 8
+            || fwrite($this->dataHandle, pack('N', strlen($value)) . $value) === false) {
+            throw new RuntimeException('Could not write XLSX shared-string scratch data.');
+        }
+        $this->count++;
+    }
+
+    public function offsetExists(mixed $offset): bool
+    {
+        return is_numeric($offset) && (int) $offset >= 0 && (int) $offset < $this->count;
+    }
+
+    public function offsetGet(mixed $offset): mixed
+    {
+        $index = (int) $offset;
+        if (!$this->offsetExists($index) || fseek($this->indexHandle, $index * 8) !== 0) {
+            return null;
+        }
+        $packed = fread($this->indexHandle, 8);
+        $decoded = strlen($packed) === 8 ? unpack('Joffset', $packed) : false;
+        if (!$decoded || fseek($this->dataHandle, (int) $decoded['offset']) !== 0) {
+            return null;
+        }
+        $lengthBytes = fread($this->dataHandle, 4);
+        $length = strlen($lengthBytes) === 4 ? unpack('Nlength', $lengthBytes) : false;
+        if (!$length) {
+            return null;
+        }
+        $remaining = (int) $length['length'];
+        $value = '';
+        while ($remaining > 0 && !feof($this->dataHandle)) {
+            $part = fread($this->dataHandle, min(1048576, $remaining));
+            if ($part === false || $part === '') {
+                break;
+            }
+            $value .= $part;
+            $remaining -= strlen($part);
+        }
+        return $remaining === 0 ? $value : null;
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void
+    {
+        throw new LogicException('Shared strings are append-only.');
+    }
+
+    public function offsetUnset(mixed $offset): void
+    {
+        throw new LogicException('Shared strings cannot be removed.');
+    }
+
+    public function close(): void
+    {
+        if (is_resource($this->indexHandle)) fclose($this->indexHandle);
+        if (is_resource($this->dataHandle)) fclose($this->dataHandle);
+        if (isset($this->indexPath)) @unlink($this->indexPath);
+        if (isset($this->dataPath)) @unlink($this->dataPath);
+    }
+
+    public function __destruct()
+    {
+        $this->close();
+    }
+}
+
+/** Reads sharedStrings.xml into a disk-backed index while streaming its XML. */
+function xlsx_shared_strings(string $archivePath, bool $hasSharedStrings): XlsxSharedStrings
+{
+    $strings = new XlsxSharedStrings(dirname($archivePath));
+    if (!$hasSharedStrings) {
+        return $strings;
+    }
+
     $reader  = xlsx_xml_reader($archivePath, 'xl/sharedStrings.xml');
 
     while ($reader->read()) {
@@ -187,7 +278,7 @@ function xlsx_shared_strings(string $archivePath, bool $hasSharedStrings): array
             $node = $reader->readOuterXML();
             // <si> may hold one <t>, or several inside <r> runs for rich text.
             preg_match_all('/<t[^>]*>(.*?)<\/t>/s', $node, $m);
-            $strings[] = html_entity_decode(implode('', $m[1]), ENT_QUOTES | ENT_XML1, 'UTF-8');
+            $strings->add(html_entity_decode(implode('', $m[1]), ENT_QUOTES | ENT_XML1, 'UTF-8'));
             $reader->next();
         }
     }

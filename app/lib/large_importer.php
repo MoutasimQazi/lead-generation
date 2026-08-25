@@ -7,6 +7,7 @@ require_once __DIR__ . '/../migrations.php';
 require_once __DIR__ . '/identifiers.php';
 require_once __DIR__ . '/inference.php';
 require_once __DIR__ . '/importer.php';
+require_once __DIR__ . '/reader.php';
 
 /** SFTP inbox for files too large to send through PHP-FPM. */
 function large_import_root(): string
@@ -34,7 +35,8 @@ function large_import_scan(): int
     $added = 0;
 
     foreach (glob($root . '/*') ?: [] as $path) {
-        if (!is_file($path) || strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'csv') {
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        if (!is_file($path) || !in_array($ext, ['csv', 'xlsx'], true)) {
             continue;
         }
 
@@ -49,8 +51,9 @@ function large_import_scan(): int
         }
 
         $exists = db_one(
-            'SELECT id FROM bulk_import_jobs WHERE file_name = ? AND file_size = ? AND file_mtime = ?',
-            [$name, $size, $mtime]
+            'SELECT id FROM bulk_import_jobs
+              WHERE file_path = ? OR (file_name = ? AND file_size = ? AND file_mtime = ?)',
+            [str_replace('\\', '/', $path), $name, $size, $mtime]
         );
         if ($exists) {
             continue;
@@ -65,6 +68,30 @@ function large_import_scan(): int
     }
 
     return $added;
+}
+
+function large_import_register_file(string $path, string $displayName, int $userId): int
+{
+    $path = large_import_safe_path($path);
+    $ext = strtolower(pathinfo($displayName, PATHINFO_EXTENSION));
+    if (!in_array($ext, ['csv', 'xlsx'], true)) {
+        throw new RuntimeException('Large background imports support CSV and XLSX files only.');
+    }
+
+    $size = (int) filesize($path);
+    $mtime = (int) filemtime($path);
+    $existing = db_one('SELECT id FROM bulk_import_jobs WHERE file_path = ?', [$path]);
+    if ($existing) {
+        return (int) $existing['id'];
+    }
+
+    db_exec(
+        'INSERT INTO bulk_import_jobs
+           (file_name, file_path, file_size, file_mtime, queued_by, status)
+         VALUES (?, ?, ?, ?, ?, "queued")',
+        [mb_substr(basename($displayName), 0, 255), $path, $size, $mtime, $userId]
+    );
+    return db_insert_id();
 }
 
 function large_import_jobs(): array
@@ -130,6 +157,10 @@ function large_import_prepare(array $bulk): array
     }
 
     $path = large_import_safe_path((string) $bulk['file_path']);
+    if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'xlsx') {
+        large_import_convert_xlsx($bulk, $path);
+        $path = large_import_safe_path((string) $bulk['file_path']);
+    }
     $fh = fopen($path, 'rb');
     if (!$fh) {
         throw new RuntimeException('Could not open the inbox CSV.');
@@ -197,6 +228,43 @@ function large_import_prepare(array $bulk): array
 
     return import_next_job($datasetId)
         ?? throw new RuntimeException('Could not create the resumable import job.');
+}
+
+/** Converts a queued workbook in the CLI worker before the resumable CSV import. */
+function large_import_convert_xlsx(array &$bulk, string $path): void
+{
+    $csvPath = preg_replace('/\.xlsx$/i', '.csv', $path) ?: ($path . '.csv');
+    $tmp = $csvPath . '.converting';
+    $parked = $path . '.converted';
+
+    @unlink($tmp);
+    xlsx_to_csv($path, $tmp);
+
+    if (!@rename($path, $parked)) {
+        @unlink($tmp);
+        throw new RuntimeException('XLSX conversion finished, but the original workbook could not be parked safely.');
+    }
+    if (!@rename($tmp, $csvPath)) {
+        @rename($parked, $path);
+        @unlink($tmp);
+        throw new RuntimeException('The converted CSV could not be finalized.');
+    }
+
+    $archive = large_archive_root() . '/' . (int) $bulk['id'] . '-' . basename($path);
+    @rename($parked, $archive); // A parked .converted file is ignored if archiving fails.
+
+    $csvName = preg_replace('/\.xlsx$/i', '.csv', (string) $bulk['file_name']) ?: ((string) $bulk['file_name'] . '.csv');
+    $bulk['file_path'] = str_replace('\\', '/', $csvPath);
+    $bulk['file_name'] = $csvName;
+    $bulk['file_size'] = (int) filesize($csvPath);
+    $bulk['file_mtime'] = (int) filemtime($csvPath);
+
+    db_exec(
+        'UPDATE bulk_import_jobs
+            SET file_path = ?, file_name = ?, file_size = ?, file_mtime = ?
+          WHERE id = ?',
+        [$bulk['file_path'], $bulk['file_name'], $bulk['file_size'], $bulk['file_mtime'], (int) $bulk['id']]
+    );
 }
 
 /** Runs queued work for a bounded duration; safe to call every minute from cron. */

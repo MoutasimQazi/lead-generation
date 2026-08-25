@@ -26,6 +26,7 @@ require_once $appRoot . '/routes/uploads.php';
 require_once $appRoot . '/routes/datasets.php';
 require_once $appRoot . '/routes/users.php';
 require_once $appRoot . '/routes/large_imports.php';
+require_once $appRoot . '/routes/chunk_uploads.php';
 require_once $appRoot . '/lib/audit.php';
 
 /**
@@ -86,6 +87,9 @@ function routes(): array
         ['POST',   '/api/imports/tick',            'route_imports_tick'],
         ['GET',    '/api/large-imports',            'route_large_imports_list'],
         ['POST',   '/api/large-imports/{id}/queue', 'route_large_import_queue'],
+        ['POST',   '/api/chunk-uploads/start',              'route_chunk_upload_start'],
+        ['POST',   '/api/chunk-uploads/{stage}/chunks/{row}', 'route_chunk_upload_part'],
+        ['POST',   '/api/chunk-uploads/{stage}/complete',   'route_chunk_upload_complete'],
 
         ['GET',    '/api/datasets',                  'route_datasets_list'],
         ['GET',    '/api/datasets/{id}',             'route_datasets_get'],

@@ -120,9 +120,13 @@ async function api(method, path, body, opts = {}) {
 
   let payload = body;
 
-  if (body !== undefined && !(body instanceof FormData)) {
+  const rawBody = body instanceof Blob || body instanceof ArrayBuffer || ArrayBuffer.isView(body);
+
+  if (body !== undefined && !(body instanceof FormData) && !rawBody) {
     headers['Content-Type'] = 'application/json';
     payload = JSON.stringify(body);
+  } else if (rawBody) {
+    headers['Content-Type'] = 'application/octet-stream';
   }
 
   let res;

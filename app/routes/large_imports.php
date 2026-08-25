@@ -20,7 +20,21 @@ function route_large_imports_list(): never
         'created_at' => $j['created_at'],
     ], large_import_jobs());
 
-    json_ok(['jobs' => $jobs, 'inbox' => 'var/inbox']);
+    $uploads = array_map(static fn(array $u): array => [
+        'id' => $u['id'],
+        'file_name' => $u['file_name'],
+        'file_size' => (int) $u['file_size'],
+        'received_bytes' => (int) $u['received_bytes'],
+        'status' => $u['status'],
+        'error' => $u['error_message'],
+    ], db_all(
+        'SELECT id, file_name, file_size, received_bytes, status, error_message
+           FROM chunk_uploads
+          WHERE status <> "ready"
+          ORDER BY created_at DESC LIMIT 50'
+    ));
+
+    json_ok(['jobs' => $jobs, 'uploads' => $uploads, 'inbox' => 'var/inbox']);
 }
 
 function route_large_import_queue(int $id): never

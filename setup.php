@@ -169,6 +169,6 @@ function h(string $s): string
 
 </main>
 
-<script src="app.js?v=20260824-2"></script>
+<script src="app.js?v=20260825-1"></script>
 </body>
 </html>

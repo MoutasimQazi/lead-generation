@@ -159,6 +159,27 @@ function migration_statements(): array
                 REFERENCES app_users(id) ON DELETE SET NULL
             ) $charset",
 
+        'chunk_uploads' => "
+            CREATE TABLE IF NOT EXISTS chunk_uploads (
+              id              CHAR(32) NOT NULL,
+              user_id         INT UNSIGNED NOT NULL,
+              file_name       VARCHAR(255) NOT NULL,
+              file_size       BIGINT UNSIGNED NOT NULL,
+              file_mtime      BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              chunk_size      INT UNSIGNED NOT NULL,
+              total_chunks    INT UNSIGNED NOT NULL,
+              received_chunks INT UNSIGNED NOT NULL DEFAULT 0,
+              received_bytes  BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              status          ENUM('uploading','assembling','ready','failed') NOT NULL DEFAULT 'uploading',
+              error_message   TEXT NULL,
+              created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              KEY idx_chunk_user_status (user_id, status, updated_at),
+              CONSTRAINT fk_chunk_user FOREIGN KEY (user_id)
+                REFERENCES app_users(id) ON DELETE CASCADE
+            ) $charset",
+
         'audit_log' => "
             CREATE TABLE IF NOT EXISTS audit_log (
               id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -249,7 +270,7 @@ function run_migrations(): array
  */
 function ensure_management_schema(): void
 {
-    $required = ['folders', 'datasets', 'dataset_assignments', 'upload_stages', 'import_jobs', 'bulk_import_jobs', 'audit_log'];
+    $required = ['folders', 'datasets', 'dataset_assignments', 'upload_stages', 'import_jobs', 'bulk_import_jobs', 'chunk_uploads', 'audit_log'];
     $missing  = false;
 
     foreach ($required as $table) {

@@ -55,18 +55,21 @@
     <div class="sechead">
       <div>
         <h2>Large server imports</h2>
-        <p class="muted" style="margin:4px 0 0">For multi-GB CSV files uploaded by SFTP to <span class="mono">var/inbox</span>.</p>
+        <p class="muted" style="margin:4px 0 0">Resumable browser uploads for multi-GB CSV or XLSX files. SFTP to <span class="mono">var/inbox</span> remains available.</p>
       </div>
       <span class="spacer"></span>
+      <label class="btn btn-primary btn-sm" for="largeFile">Upload large file</label>
+      <input type="file" id="largeFile" accept=".csv,.xlsx" hidden>
       <button class="btn btn-sm" id="refreshLarge">Refresh inbox</button>
     </div>
+    <div id="largeUploadProgress"></div>
     <div id="largeImportList"><p class="muted">Checking the server inbox…</p></div>
   </section>
 
   <div id="status"></div>
 </div>
 
-<script src="app.js?v=20260824-2"></script>
+<script src="app.js?v=20260825-1"></script>
 <script>
 /* Types the admin may choose. Kept in step with column_type_assert() on the
    server — anything not on this list is rejected there anyway. */
@@ -91,15 +94,21 @@ let picked = [], stage = null;
 async function loadLargeImports() {
   const host = $('largeImportList');
   try {
-    const { jobs } = await apiGet('api/large-imports');
-    if (!jobs.length) {
-      host.innerHTML = '<div class="empty" style="padding:28px 20px"><h3>No CSV files found</h3>' +
-        '<p>Upload large comma-delimited CSV files to <span class="mono">var/inbox</span> using SFTP, then refresh.</p></div>';
+    const { jobs, uploads = [] } = await apiGet('api/large-imports');
+    if (!jobs.length && !uploads.length) {
+      host.innerHTML = '<div class="empty" style="padding:28px 20px"><h3>No large files queued</h3>' +
+        '<p>Use “Upload large file” or place CSV/XLSX files in <span class="mono">var/inbox</span> using SFTP.</p></div>';
       return;
     }
+    const uploadRows = uploads.map(item => '<tr><td>' + esc(item.file_name) +
+      (item.error ? '<div class="muted" style="color:var(--danger)">' + esc(item.error) + '</div>' : '') +
+      '</td><td class="mono">' + bytes(item.file_size) + '</td><td><span class="tag">' + esc(item.status) +
+      '</span></td><td class="mono">' +
+      (item.status === 'uploading' ? Math.floor(item.received_bytes * 100 / item.file_size) + '%' : '—') +
+      '</td><td></td></tr>').join('');
     host.innerHTML = '<div class="tablecard"><div class="scroll"><table><thead><tr>' +
       '<th>File</th><th>Size</th><th>Status</th><th>Rows</th><th></th></tr></thead><tbody>' +
-      jobs.map(job => '<tr><td>' + esc(job.file_name) +
+      uploadRows + jobs.map(job => '<tr><td>' + esc(job.file_name) +
         (job.error ? '<div class="muted" style="color:var(--danger)">' + esc(job.error) + '</div>' : '') +
         '</td><td class="mono">' + bytes(job.file_size) + '</td><td><span class="tag">' + esc(job.status) +
         '</span></td><td class="mono">' + fmt(job.rows_done) + '</td><td>' +
@@ -123,6 +132,89 @@ async function loadLargeImports() {
     host.innerHTML = '<div class="err"><h3>Could not check the inbox</h3><p>' + esc(err.message) + '</p></div>';
   }
 }
+
+async function uploadChunkWithRetry(path, blob) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await apiPost(path, blob, { timeoutMs: 180000 });
+    } catch (err) {
+      lastError = err;
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1200));
+    }
+  }
+  throw lastError;
+}
+
+async function uploadLargeFile(file) {
+  const host = $('largeUploadProgress');
+  const maxFileSize = 2 * 1024 * 1024 * 1024;
+  if (file.size > maxFileSize) {
+    host.innerHTML = '<div class="err"><h3>File is too large</h3>' +
+      '<p>The maximum size for one browser upload is 2 GB.</p></div>';
+    $('largeFile').value = '';
+    return;
+  }
+  const chunkSize = 10 * 1024 * 1024;
+  const totalChunks = Math.ceil(file.size / chunkSize);
+  let started;
+
+  host.innerHTML = '<div class="loading"><span class="pulse"></span>Preparing resumable upload…</div>';
+  try {
+    started = await apiPost('api/chunk-uploads/start', {
+      file_name: file.name,
+      file_size: file.size,
+      file_mtime: file.lastModified || 0,
+      chunk_size: chunkSize,
+      total_chunks: totalChunks,
+    });
+
+    if (started.complete) {
+      host.innerHTML = '<div class="notice good"><strong>This file is already uploaded.</strong> ' +
+        'Its current status is ' + esc(started.status) + '.</div>';
+      await loadLargeImports();
+      return;
+    }
+
+    const received = new Set(started.received || []);
+    let uploaded = 0;
+    for (const index of received) {
+      uploaded += Math.min(chunkSize, file.size - index * chunkSize);
+    }
+
+    for (let index = 0; index < totalChunks; index++) {
+      if (!received.has(index)) {
+        const start = index * chunkSize;
+        const end = Math.min(file.size, start + chunkSize);
+        const percent = Math.floor(uploaded * 100 / file.size);
+        host.innerHTML = '<div class="loading"><span class="pulse"></span>' +
+          'Uploading <strong>' + esc(file.name) + '</strong> — ' + percent + '% (' +
+          bytes(uploaded) + ' of ' + bytes(file.size) + ')</div>';
+        await uploadChunkWithRetry(
+          'api/chunk-uploads/' + started.upload_id + '/chunks/' + index,
+          file.slice(start, end)
+        );
+        uploaded += end - start;
+      }
+    }
+
+    host.innerHTML = '<div class="loading"><span class="pulse"></span>Upload complete. Queueing background assembly…</div>';
+    await apiPost('api/chunk-uploads/' + started.upload_id + '/complete', {});
+    host.innerHTML = '<div class="notice good"><strong>Upload complete.</strong> ' +
+      'The cron worker will assemble' + (/\.xlsx$/i.test(file.name) ? ', convert' : '') +
+      ' and import the file automatically.</div>';
+    $('largeFile').value = '';
+    await loadLargeImports();
+  } catch (err) {
+    host.innerHTML = '<div class="err"><h3>Large upload paused</h3><p>' + esc(err.message) +
+      ' Select the same file again to resume from the last completed chunk.</p></div>';
+  }
+}
+
+$('largeFile').addEventListener('change', event => {
+  const file = event.target.files && event.target.files[0];
+  if (file) uploadLargeFile(file);
+});
 
 $('refreshLarge').addEventListener('click', loadLargeImports);
 setInterval(() => {

@@ -60,7 +60,7 @@ DirectoryIndex login.html
 
   # Google Fonts is the only external origin these pages use. 'unsafe-inline'
   # covers style attributes only — scripts are strictly same-origin files.
-  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-XTn9L4J22UCEYFV1ilHkwFu0odi1HgjUD7tKbvCw034='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-uez6fAitd7gpKyFo0GiN9ITeaKzUASDNLNqC4Ply9ow='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
 
   <FilesMatch "\.(html|php)$">
     Header always set Cache-Control "no-store, must-revalidate"

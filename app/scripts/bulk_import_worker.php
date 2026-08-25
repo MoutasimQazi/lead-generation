@@ -10,6 +10,7 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../migrations.php';
 require_once __DIR__ . '/../lib/large_importer.php';
+require_once __DIR__ . '/../routes/chunk_uploads.php';
 
 $budget = isset($argv[1]) ? max(10, min(300, (int) $argv[1])) : 50;
 
@@ -27,6 +28,10 @@ try {
     }
 
     try {
+        $assembled = chunk_upload_assemble_next();
+        if ($assembled) {
+            echo 'Assembled and queued: ' . $assembled['file_name'] . "\n";
+        }
         $result = large_import_work($budget);
     } finally {
         db_value('SELECT RELEASE_LOCK(?)', [$lockName]);
