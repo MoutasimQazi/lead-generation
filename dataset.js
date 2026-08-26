@@ -63,7 +63,10 @@ function renderHead() {
     '</dl>';
 
   $('tools').hidden = false;
-  $('exportBtn').href = 'api/datasets/' + id + '/export';
+  if (session.user.is_admin) {
+    $('exportBtn').hidden = false;
+    $('exportBtn').href = 'api/datasets/' + id + '/export';
+  }
 
   $('settingsBtn').hidden = false;
 
@@ -79,7 +82,9 @@ function renderHead() {
   if (ds.is_protected) {
     $('banner').innerHTML =
       '<div class="notice"><strong>This is the master leads table.</strong> ' +
-      'It can be searched and exported, but not edited or deleted here.</div>';
+      (session.user.is_admin
+        ? 'It can be searched and exported, but not edited or deleted here.'
+        : 'It can be viewed and searched, but not edited or exported.') + '</div>';
   }
 }
 

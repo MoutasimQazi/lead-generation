@@ -891,7 +891,7 @@ function route_columns_delete(int $id, string $columnName): never
  */
 function route_dataset_export(int $id): never
 {
-    require_auth();
+    require_admin();
 
     $d       = load_dataset($id);
     $columns = $d['columns'];
