@@ -12,7 +12,10 @@ let rows = [], cols = [], page = 0, busy = false, searchableRows = 0;
 const PER_PAGE = 50;
 
 const LABELS = {
-  business_name:'Business', primary_sector:'Trade', sectors:'All trades',
+  business_name:'Company name', company_name:'Company name',
+  company:'Company name', name:'Company name', legal_name:'Company name',
+  dba_name:'Trading name',
+  primary_sector:'Trade', sectors:'All trades',
   sectors_norm:'All trades', size_band:'Size', num_employees:'Employees',
   number_of_employees:'Employees', contact_person:'Contacts',
   corporate_email:'Corporate email', generic_email:'Generic email',
@@ -20,6 +23,9 @@ const LABELS = {
   street_address:'Address', city:'City', state:'State', website:'Website', id:'ID'
 };
 const label = c => LABELS[c] || String(c).replace(/_/g,' ').replace(/\b\w/g, m => m.toUpperCase());
+
+/* Columns that hold the company's name — datasets spell it differently. */
+const NAME_COLS = ['business_name','company_name','company','name','legal_name','dba_name'];
 
 (async () => {
   await requireSession({ page: 'search' });
@@ -132,7 +138,7 @@ function paint(){
   const slice = rows.slice(start, start + PER_PAGE);
 
   $('tbody').innerHTML = slice.map(r =>
-    '<tr>' + cols.map(c => cell(c, r[c])).join('') + '</tr>'
+    '<tr>' + cols.map(c => cell(c, r[c], r)).join('') + '</tr>'
   ).join('');
 
   const pages = Math.ceil(rows.length / PER_PAGE);
@@ -152,7 +158,7 @@ function scrollTop(){
   document.querySelector('.tablecard').scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
-function cell(col, val){
+function cell(col, val, row){
   const v = (val === null || val === undefined) ? '' : String(val);
   if (!v.trim()) return '<td><span class="blank">—</span></td>';
 
@@ -171,9 +177,33 @@ function cell(col, val){
     return '<td class="web"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(shown) + '</a></td>';
   }
   if (col === 'state') return '<td class="st mono">' + esc(v) + '</td>';
-  if (col === 'business_name') return '<td class="name">' + esc(v) + '</td>';
+  if (NAME_COLS.includes(col)) {
+    return '<td class="name"><span class="namewrap">' + esc(v) + googleBtn(v, row) + '</span></td>';
+  }
   if (col === 'id') return '<td class="mono st">' + esc(v) + '</td>';
   return '<td>' + esc(v) + '</td>';
+}
+
+/* ── google lookup ──────────────────────────────────────────────────────
+   A one-click Google search for the business, next to its name. The city
+   and state are folded into the query when the row carries them, so
+   common names ("Apex Roofing") land on the right company.               */
+
+const GOOGLE_ICON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" focusable="false">' +
+    '<path fill="currentColor" d="M11 4a7 7 0 1 0 4.24 12.56l3.6 3.6a1 1 0 0 0 1.42-1.42l-3.6-3.6A7 7 0 0 0 11 4Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z"/>' +
+  '</svg>';
+
+function googleBtn(name, row){
+  const parts = [name];
+  if (row) {
+    if (row.city)  parts.push(String(row.city));
+    if (row.state) parts.push(String(row.state));
+  }
+  const url = 'https://www.google.com/search?q=' + encodeURIComponent(parts.join(' ').trim());
+  return '<a class="gbtn" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"' +
+         ' title="Search Google for ' + esc(name) + '"' +
+         ' aria-label="Search Google for ' + esc(name) + '">' + GOOGLE_ICON + '<span>Google</span></a>';
 }
 
 function downloadCsv(){

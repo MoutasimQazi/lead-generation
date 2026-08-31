@@ -300,6 +300,18 @@ tbody td{padding:13px 16px;border-bottom:1px solid var(--line-2);vertical-align:
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover{background:var(--primary-soft)}
 td.name{font-weight:600;min-width:190px}
+.namewrap{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.gbtn{
+  display:inline-flex;align-items:center;gap:4px;flex:none;
+  padding:2px 8px 2px 6px;border:1px solid var(--line);border-radius:999px;
+  background:var(--sunken);color:var(--ink-2);text-decoration:none;
+  font:600 10px/1.6 var(--font-sans);letter-spacing:.05em;text-transform:uppercase;
+  transition:background .15s,border-color .15s,color .15s;
+}
+.gbtn:hover,.gbtn:focus-visible{
+  background:var(--primary-soft);border-color:var(--primary);color:var(--primary-ink);
+}
+.gbtn svg{flex:none}
 td.tel{white-space:nowrap}
 td.tel a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line)}
 td.tel a:hover{border-bottom-color:var(--primary);color:var(--primary-ink)}
