@@ -178,32 +178,35 @@ function cell(col, val, row){
   }
   if (col === 'state') return '<td class="st mono">' + esc(v) + '</td>';
   if (NAME_COLS.includes(col)) {
-    return '<td class="name"><span class="namewrap">' + esc(v) + googleBtn(v, row) + '</span></td>';
+    return '<td class="name"><span class="namewrap">' + esc(v) + linkedinBtn(v, row) + '</span></td>';
   }
   if (col === 'id') return '<td class="mono st">' + esc(v) + '</td>';
   return '<td>' + esc(v) + '</td>';
 }
 
-/* ── google lookup ──────────────────────────────────────────────────────
-   A one-click Google search for the business, next to its name. The city
-   and state are folded into the query when the row carries them, so
-   common names ("Apex Roofing") land on the right company.               */
+/* ── linkedin lookup ────────────────────────────────────────────────────
+   A one-click LinkedIn lookup for the business, next to its name. It runs as
+   a Google search ending in "linkedin" rather than hitting LinkedIn's own
+   search, which requires a session. The city and state are folded in when
+   the row carries them, so common names land on the right company.       */
 
-const GOOGLE_ICON =
+const LINKEDIN_ICON =
   '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" focusable="false">' +
-    '<path fill="currentColor" d="M11 4a7 7 0 1 0 4.24 12.56l3.6 3.6a1 1 0 0 0 1.42-1.42l-3.6-3.6A7 7 0 0 0 11 4Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z"/>' +
+    '<path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13zM7.12 20.45H3.55V9h3.57v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z"/>' +
   '</svg>';
 
-function googleBtn(name, row){
+function linkedinBtn(name, row){
   const parts = [name];
   if (row) {
     if (row.city)  parts.push(String(row.city));
     if (row.state) parts.push(String(row.state));
   }
+  parts.push('linkedin');
+
   const url = 'https://www.google.com/search?q=' + encodeURIComponent(parts.join(' ').trim());
-  return '<a class="gbtn" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"' +
-         ' title="Search Google for ' + esc(name) + '"' +
-         ' aria-label="Search Google for ' + esc(name) + '">' + GOOGLE_ICON + '<span>Google</span></a>';
+  return '<a class="libtn" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"' +
+         ' title="Find ' + esc(name) + ' on LinkedIn"' +
+         ' aria-label="Find ' + esc(name) + ' on LinkedIn">' + LINKEDIN_ICON + '<span>LinkedIn</span></a>';
 }
 
 function downloadCsv(){
