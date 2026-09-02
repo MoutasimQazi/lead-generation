@@ -94,7 +94,7 @@ function h(string $s): string
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20260901-3">
 </head>
 <body class="centered">
 <main class="authcard">
@@ -151,11 +151,31 @@ function h(string $s): string
     </label>
     <label class="field">
       <span>Password — at least <?= MIN_SETUP_PASSWORD ?> characters</span>
-      <input type="password" name="password" required autocomplete="new-password">
+      <div class="pwwrap">
+        <input type="password" name="password" required autocomplete="new-password">
+        <button type="button" class="pwtoggle" aria-label="Show password" aria-pressed="false">
+          <svg class="eye-on" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M12 5c-5.05 0-9.27 3.11-11 7.5 1.73 4.39 5.95 7.5 11 7.5s9.27-3.11 11-7.5C21.27 8.11 17.05 5 12 5Zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/>
+          </svg>
+          <svg class="eye-off" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" hidden>
+            <path fill="currentColor" d="M2.81 2.81 1.39 4.22l3.28 3.28C3 8.94 1.5 10.85.99 12.5c1.73 4.39 5.95 7.5 11 7.5 1.83 0 3.55-.41 5.07-1.14l3.32 3.32 1.41-1.41ZM12 17.5a5 5 0 0 1-4.78-6.5l1.6 1.6a3 3 0 0 0 3.68 3.68l1.6 1.6a4.96 4.96 0 0 1-2.1.62Zm9.01-5C19.27 8.11 15.05 5 10 5c-.86 0-1.7.09-2.5.26l1.68 1.68a5 5 0 0 1 5.88 5.88l2.83 2.83c1.13-1.02 2.05-2.29 2.63-3.65Z"/>
+          </svg>
+        </button>
+      </div>
     </label>
     <label class="field">
       <span>Confirm password</span>
-      <input type="password" name="confirm" required autocomplete="new-password">
+      <div class="pwwrap">
+        <input type="password" name="confirm" required autocomplete="new-password">
+        <button type="button" class="pwtoggle" aria-label="Show password" aria-pressed="false">
+          <svg class="eye-on" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M12 5c-5.05 0-9.27 3.11-11 7.5 1.73 4.39 5.95 7.5 11 7.5s9.27-3.11 11-7.5C21.27 8.11 17.05 5 12 5Zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/>
+          </svg>
+          <svg class="eye-off" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" hidden>
+            <path fill="currentColor" d="M2.81 2.81 1.39 4.22l3.28 3.28C3 8.94 1.5 10.85.99 12.5c1.73 4.39 5.95 7.5 11 7.5 1.83 0 3.55-.41 5.07-1.14l3.32 3.32 1.41-1.41ZM12 17.5a5 5 0 0 1-4.78-6.5l1.6 1.6a3 3 0 0 0 3.68 3.68l1.6 1.6a4.96 4.96 0 0 1-2.1.62Zm9.01-5C19.27 8.11 15.05 5 10 5c-.86 0-1.7.09-2.5.26l1.68 1.68a5 5 0 0 1 5.88 5.88l2.83 2.83c1.13-1.02 2.05-2.29 2.63-3.65Z"/>
+          </svg>
+        </button>
+      </div>
     </label>
     <button class="go" type="submit">Create tables and admin</button>
   </form>
@@ -169,6 +189,6 @@ function h(string $s): string
 
 </main>
 
-<script src="app.js?v=20260825-1"></script>
+<script src="app.js?v=20260901-3"></script>
 </body>
 </html>

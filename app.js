@@ -55,6 +55,28 @@ function bindThemeToggle(root = document) {
 applyTheme(preferredTheme());
 document.addEventListener('DOMContentLoaded', () => bindThemeToggle());
 
+/* ── password visibility toggle ───────────────────────────────────────── */
+
+function bindPasswordToggles(root = document) {
+  $$('.pwtoggle', root).forEach((button) => {
+    if (button.dataset.pwBound) return;
+    button.dataset.pwBound = '1';
+    const input = button.previousElementSibling;
+    if (!input) return;
+
+    button.addEventListener('click', () => {
+      const shown = input.type === 'text';
+      input.type = shown ? 'password' : 'text';
+      button.querySelector('.eye-on').hidden = !shown;
+      button.querySelector('.eye-off').hidden = shown;
+      button.setAttribute('aria-pressed', String(!shown));
+      button.setAttribute('aria-label', shown ? 'Show password' : 'Hide password');
+    });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => bindPasswordToggles());
+
 /** Session state, filled by requireSession(). */
 const session = { user: null, csrf: null };
 

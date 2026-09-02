@@ -97,12 +97,48 @@ function large_import_register_file(string $path, string $displayName, int $user
 function large_import_jobs(): array
 {
     large_import_scan();
+    large_import_recover_stale_failures();
     return db_all(
         'SELECT b.*, d.display_name AS dataset_name
            FROM bulk_import_jobs b
            LEFT JOIN datasets d ON d.id = b.dataset_id
           ORDER BY b.id DESC LIMIT 200'
     );
+}
+
+/**
+ * Clears jobs stuck "failed" by the stale-$bulk archiving bug fixed above
+ * (see large_import_work()): the row's error is left over from a failed
+ * best-effort archive step, but the dataset it points to actually finished
+ * importing and is "ready". Re-attempts the archive using the row's current
+ * (correct) file_path, then always clears the stale failure either way —
+ * the data already made it in, so this error no longer describes anything
+ * wrong.
+ */
+function large_import_recover_stale_failures(): void
+{
+    $stuck = db_all(
+        "SELECT b.id, b.file_path FROM bulk_import_jobs b
+           JOIN datasets d ON d.id = b.dataset_id
+          WHERE b.status = 'failed' AND d.status = 'ready'"
+    );
+
+    foreach ($stuck as $row) {
+        try {
+            $path = large_import_safe_path((string) $row['file_path']);
+            $target = large_archive_root() . '/' . (int) $row['id'] . '-' . basename($path);
+            @rename($path, $target);
+        } catch (Throwable $e) {
+            // Already archived, or otherwise gone — nothing left to move.
+        }
+
+        db_exec(
+            'UPDATE bulk_import_jobs
+                SET status = "done", error_message = NULL, finished_at = COALESCE(finished_at, NOW())
+              WHERE id = ?',
+            [(int) $row['id']]
+        );
+    }
 }
 
 function large_import_queue(int $id, int $userId): void
@@ -284,6 +320,19 @@ function large_import_work(int $budgetSeconds = 50): array
     try {
         do {
             $job = large_import_prepare($bulk);
+
+            // large_import_prepare() takes $bulk by value, so an XLSX
+            // conversion or dataset creation inside it (which does persist
+            // to the row) never reaches this local copy. Without this
+            // refresh, a job that finishes in the very same slice that
+            // converted its file still carries the pre-conversion path when
+            // the "done" branch below archives the source — realpath() on
+            // that stale, already-renamed path fails with "Could not locate
+            // the inbox file.", and dataset_id still reads empty here too,
+            // so a genuine failure on that same slice would also miss
+            // marking the dataset as failed.
+            $bulk = db_one('SELECT * FROM bulk_import_jobs WHERE id = ?', [(int) $bulk['id']]) ?: $bulk;
+
             $progress = import_run_slice($job, false, false);
             db_exec(
                 'UPDATE bulk_import_jobs SET status = "running", rows_done = ? WHERE id = ?',
