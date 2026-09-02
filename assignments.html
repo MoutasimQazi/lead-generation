@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#F1561D">
+<link rel="icon" href="movenetics.ico?v=20260823" type="image/x-icon">
+<title>Assignments · Movenetics Lead Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=20260902-1">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top"><div class="nav" id="nav"></div></header>
+
+  <section class="hero">
+    <h1>Dataset <span class="accent">assignments</span></h1>
+    <p>Choose which datasets each employee can search and export. Admins already see every
+       dataset, so only employee accounts appear here — manage accounts themselves on
+       <a href="users.html">Users</a>.</p>
+  </section>
+
+  <div id="status"></div>
+</div>
+
+<!-- ── assign datasets ────────────────────────────────────────────────── -->
+<div class="modal" id="assignModal">
+  <div class="modal-card wide">
+    <h2>Assign datasets</h2>
+    <p class="sub">Choose which datasets <strong id="assignName"></strong> can search and export.</p>
+    <div class="assignment-list" id="assignList"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('assignModal')">Cancel</button>
+      <button class="btn btn-primary" id="assignSave">Save assignments</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=20260902-1"></script>
+<script src="assignments.js?v=20260902-1"></script>
+</body>
+</html>

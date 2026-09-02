@@ -256,6 +256,7 @@ function renderNav(active) {
     { id: 'datasets', label: 'Datasets', href: 'datasets.html' },
     { id: 'upload', label: 'Upload', href: 'upload.html', admin: true },
     { id: 'users', label: 'Users', href: 'users.html', admin: true },
+    { id: 'assignments', label: 'Assignments', href: 'assignments.html', admin: true },
   ].filter((l) => !l.admin || isAdmin);
 
   host.innerHTML =

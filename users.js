@@ -33,9 +33,6 @@ function render() {
 
   $$('[data-reset]').forEach(b =>
     b.addEventListener('click', () => resetPassword(Number(b.dataset.reset))));
-
-  $$('[data-assign]').forEach(b =>
-    b.addEventListener('click', () => openAssignModal(Number(b.dataset.assign))));
 }
 
 function section(title, list, isActive) {
@@ -44,7 +41,7 @@ function section(title, list, isActive) {
   return '<div class="sechead" style="margin-top:22px"><h2>' + title + '</h2>' +
       '<span class="cbadge">' + list.length + '</span></div>' +
     '<div class="tablecard"><div class="scroll"><table><thead><tr>' +
-      '<th>Name</th><th>Email</th><th>Role</th><th>Assigned datasets</th><th>Last signed in</th><th></th>' +
+      '<th>Name</th><th>Email</th><th>Role</th><th>Last signed in</th><th></th>' +
     '</tr></thead><tbody>' +
     list.map(u => row(u, isActive)).join('') +
     '</tbody></table></div></div>';
@@ -60,15 +57,8 @@ function row(u, isActive) {
       '</select>'
     : '<span class="tag">' + esc(u.role) + '</span>';
 
-  const assigned = u.role === 'admin'
-    ? '<span class="muted">All datasets</span>'
-    : (u.assigned_datasets && u.assigned_datasets.length
-        ? esc(u.assigned_datasets.map(d => d.display_name).join(', '))
-        : '<span class="blank">None</span>');
-
   const actions = isActive
-    ? (u.role === 'employee' ? '<button class="btn btn-sm" data-assign="' + u.id + '">Assign datasets</button> ' : '') +
-      '<button class="btn btn-sm" data-reset="' + u.id + '">Reset password</button> ' +
+    ? '<button class="btn btn-sm" data-reset="' + u.id + '">Reset password</button> ' +
       (me ? '' : '<button class="btn btn-sm btn-danger" data-toggle="' + u.id + '" data-to="0">Deactivate</button>')
     : '<button class="btn btn-sm" data-toggle="' + u.id + '" data-to="1">Reactivate</button>';
 
@@ -76,7 +66,6 @@ function row(u, isActive) {
     '<td class="name">' + esc(u.full_name) + (me ? ' <span class="tag">you</span>' : '') + '</td>' +
     '<td class="st">' + esc(u.email) + '</td>' +
     '<td>' + role + '</td>' +
-    '<td class="st" style="font-size:12.5px">' + assigned + '</td>' +
     '<td class="st mono" style="font-size:12px">' +
       (u.last_login_at ? esc(u.last_login_at.slice(0, 16)) : '<span class="blank">never</span>') + '</td>' +
     '<td style="white-space:nowrap">' + actions + '</td>' +
@@ -162,53 +151,3 @@ async function resetPassword(userId) {
     toast(err.message, true);
   }
 }
-
-/* ── assign datasets ─────────────────────────────────────────────────── */
-
-let assignUserId = null;
-
-async function openAssignModal(userId) {
-  assignUserId = userId;
-  const u = users.find(x => x.id === userId);
-  $('assignName').textContent = u ? u.full_name : '';
-  $('assignList').innerHTML = '<p class="muted" style="margin:6px">Loading datasets…</p>';
-  openModal('assignModal');
-
-  try {
-    const data = await apiGet('api/users/' + userId + '/assignments');
-    const datasets = data.datasets || [];
-    $('assignList').innerHTML = datasets.length
-      ? datasets.map(d =>
-          '<label class="assignment-person">' +
-            '<input type="checkbox" data-assignds="' + d.id + '"' +
-              (d.assigned ? ' checked' : '') + '>' +
-            '<span><strong>' + esc(d.display_name) + (d.is_protected ? ' <span class="tag locked">protected</span>' : '') + '</strong>' +
-            '<small>' + esc(d.folder_name || 'Unfiled') +
-              (d.status !== 'ready' ? ' · ' + esc(d.status) : '') + '</small></span>' +
-          '</label>'
-        ).join('')
-      : '<p class="muted" style="margin:6px">No datasets exist yet.</p>';
-  } catch (err) {
-    $('assignList').innerHTML = '<p class="muted" style="margin:6px">Could not load datasets.</p>';
-  }
-}
-
-$('assignSave').addEventListener('click', async () => {
-  if (!assignUserId) return;
-  const button = $('assignSave');
-  const datasetIds = $$('[data-assignds]:checked').map(input => Number(input.dataset.assignds));
-
-  try {
-    button.disabled = true;
-    button.textContent = 'Saving…';
-    await apiPatch('api/users/' + assignUserId + '/assignments', { dataset_ids: datasetIds });
-    toast('Dataset assignments saved.');
-    closeModal('assignModal');
-    await load();
-  } catch (err) {
-    toast(err.message, true);
-  } finally {
-    button.disabled = false;
-    button.textContent = 'Save assignments';
-  }
-});
