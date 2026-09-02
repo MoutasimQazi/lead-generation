@@ -27,6 +27,7 @@ require_once $appRoot . '/routes/datasets.php';
 require_once $appRoot . '/routes/users.php';
 require_once $appRoot . '/routes/large_imports.php';
 require_once $appRoot . '/routes/chunk_uploads.php';
+require_once $appRoot . '/routes/dashboard.php';
 require_once $appRoot . '/lib/audit.php';
 
 /**
@@ -120,6 +121,7 @@ function routes(): array
         ['PATCH',  '/api/users/{id}/assignments', 'route_user_assignments_update'],
 
         ['GET',    '/api/audit',      'route_audit_list'],
+        ['GET',    '/api/dashboard',  'route_dashboard'],
     ];
 }
 

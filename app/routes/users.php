@@ -63,12 +63,16 @@ function route_users_list(): never
 
     $assigned = [];
     foreach (db_all(
-        'SELECT a.user_id, d.id, d.display_name
+        'SELECT a.user_id, d.id, d.display_name, d.is_protected
            FROM dataset_assignments a
            JOIN datasets d ON d.id = a.dataset_id
           ORDER BY d.display_name ASC'
     ) as $a) {
-        $assigned[(int) $a['user_id']][] = ['id' => (int) $a['id'], 'display_name' => $a['display_name']];
+        $assigned[(int) $a['user_id']][] = [
+            'id'           => (int) $a['id'],
+            'display_name' => $a['display_name'],
+            'is_protected' => (int) $a['is_protected'] === 1,
+        ];
     }
 
     json_ok(['users' => array_map(static fn($u) => [

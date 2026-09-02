@@ -42,6 +42,11 @@
   /* lead flags */
   --flag-contacted:#2F6FED;
   --flag-unreachable:#C9891F;
+  /* Chart-mark red: --danger stays fixed here rather than brightening in
+     dark mode (as it does for badge text) — colorblind-safety validation
+     (scripts/validate_palette.js) was run against this exact fixed value
+     alongside won/contacted/unreachable, not against --danger's dark step. */
+  --stat-lost:#C4321F;
 
   --r-card:16px;
   --r-sm:10px;
@@ -75,6 +80,9 @@
     --danger:#F97066;
     --danger-bg:#2A1512;
     --danger-line:rgba(249,112,102,.25);
+    /* Slightly darker than the light-mode step so it still sits in-band
+       against a near-black chart surface — see validate_palette.js note above. */
+    --flag-unreachable:#C08019;
 
     --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 28px -16px rgba(0,0,0,.7);
     --shadow-lg:0 2px 8px rgba(0,0,0,.5), 0 28px 56px -28px rgba(0,0,0,.8);
@@ -245,6 +253,7 @@ input{font-family:inherit}
 }
 .pwtoggle:hover{color:var(--ink)}
 .pwtoggle:focus-visible{outline:2px solid var(--primary);outline-offset:-2px;border-radius:var(--r-sm)}
+.pwtoggle svg[hidden]{display:none!important}
 .note{font-size:12.5px;color:var(--ink-2);margin:18px 0 0;padding-top:15px;border-top:1px solid var(--line-2)}
 
 /* ── status ─────────────────────────────────────────────────────────── */
@@ -425,25 +434,49 @@ tr.flag-row-lost td{background:rgba(196,50,31,.05)}
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── centred single-card pages (login, setup) ───────────────────────────── */
-body.centered{display:flex;align-items:center;justify-content:center;padding:24px}
-.authcard{
-  width:100%;max-width:420px;background:var(--card);
-  border:1px solid var(--line);border-left:4px solid var(--bar);
-  border-radius:var(--r-card);box-shadow:var(--shadow-lg);padding:30px 28px;
+body.centered{
+  display:flex;align-items:center;justify-content:center;padding:24px;
+  position:relative;overflow:hidden;
 }
+body.centered::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(620px 420px at 50% 28%, var(--primary-glow), transparent 70%);
+  opacity:.6;
+}
+.authwrap{
+  position:relative;z-index:1;width:100%;max-width:440px;
+  display:flex;flex-direction:column;align-items:center;gap:20px;
+}
+.authcard{
+  width:100%;background:var(--card);
+  border:1px solid var(--line);border-left:4px solid var(--bar);
+  border-radius:var(--r-card);box-shadow:var(--shadow-lg);padding:36px 34px;
+  animation:authIn .4s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes authIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.authcard{animation:none}}
 .authbar{
   display:flex;align-items:center;justify-content:space-between;gap:16px;
-  margin-bottom:26px;
+  margin-bottom:28px;
 }
 .authcard .logo{
   display:inline-flex;width:max-content;justify-content:flex-start;
   margin:0;cursor:default;
 }
-.authcard .logo img{height:28px;max-width:100%}
-.authhead{margin-bottom:22px}
-.authhead h1{margin:0 0 6px;font-size:22px;font-weight:700;letter-spacing:-.02em}
-.authhead p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.authcard .logo img{height:30px;max-width:100%}
+.authhead{margin-bottom:24px}
+.authhead h1{margin:0 0 7px;font-size:24px;font-weight:700;letter-spacing:-.02em}
+.authhead p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.55}
 .authcard #status:not(:empty){margin-bottom:18px}
+.authfoot{margin:0;font-size:11.5px;color:var(--ink-3);text-align:center}
+
+.field-icon{position:relative}
+.field-icon input{padding-left:42px}
+.field-icon .ficon{
+  position:absolute;left:14px;top:50%;transform:translateY(-50%);
+  color:var(--ink-3);pointer-events:none;transition:color .15s;
+}
+.field-icon input:focus ~ .ficon{color:var(--primary)}
 .authform .go{width:100%;margin-top:6px}
 .authform .field input{background:var(--page)}
 
@@ -502,6 +535,55 @@ select:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px var(-
   border:1px solid var(--line);border-radius:var(--r-pill);
   padding:4px 11px;font-size:12px;font-weight:600;color:var(--ink-2);white-space:nowrap;
 }
+.dchip.shared{background:var(--danger-bg);border-color:var(--danger-line);color:var(--danger)}
+
+/* ── admin dashboard ────────────────────────────────────────────────────── */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin:18px 0 26px}
+.stat-tile{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);
+  padding:16px 18px;box-shadow:var(--shadow);
+}
+.stat-tile .label{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+.stat-tile .value{font-size:25px;font-weight:700;margin-top:7px;letter-spacing:-.02em;color:var(--ink)}
+.stat-tile .value.accent{color:var(--primary-ink)}
+
+.chart-card{
+  background:var(--card);border:1px solid var(--line);border-left:4px solid var(--bar);
+  border-radius:var(--r-card);box-shadow:var(--shadow);padding:20px 22px;margin-bottom:18px;
+}
+.chart-card h2{margin:0 0 3px;font-size:15px;font-weight:700}
+.chart-card .sub{margin:0 0 16px;font-size:12.5px;color:var(--ink-2)}
+.chart-card .empty-note{font-size:12.5px;color:var(--ink-3);padding:10px 0}
+
+.chartlegend{display:flex;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--ink-3);margin-bottom:16px}
+.chartlegend span{display:inline-flex;align-items:center;gap:6px}
+.chartlegend i{width:9px;height:9px;border-radius:2px;flex:none}
+
+.barrows{display:flex;flex-direction:column;gap:11px}
+.barrow{display:grid;grid-template-columns:132px 1fr 36px;align-items:center;gap:12px}
+.barrow .who{font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.barrow .total{font-size:12.5px;font-weight:700;color:var(--ink-2);font-variant-numeric:tabular-nums;text-align:right}
+.barrow svg{display:block;overflow:visible;width:100%}
+.barrow rect{cursor:pointer}
+
+.chart-tooltip{
+  position:fixed;z-index:80;pointer-events:none;
+  background:var(--pill-dark);color:var(--pill-dark-ink);
+  border-radius:8px;padding:8px 11px;font-size:12px;line-height:1.5;
+  box-shadow:var(--shadow-lg);opacity:0;transform:translateY(2px);
+  transition:opacity .1s,transform .1s;max-width:220px;
+}
+.chart-tooltip.show{opacity:1;transform:translateY(0)}
+.chart-tooltip .tt-value{font-weight:700;font-size:13px;display:block}
+.chart-tooltip .tt-label{opacity:.7}
+
+.trendchart{width:100%;height:auto;display:block;overflow:visible}
+.trendchart .gridline{stroke:var(--line-2);stroke-width:1}
+.trendchart .axislabel{fill:var(--ink-3);font-size:10px;font-family:var(--font-sans)}
+.trendchart .trendline{fill:none;stroke:var(--primary);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.trendchart .trendarea{fill:var(--primary);opacity:.08}
+.trendchart .trenddot{fill:var(--primary);stroke:var(--card);stroke-width:2}
+.trendchart .crosshair{stroke:var(--ink-3);stroke-width:1;opacity:0;pointer-events:none}
 
 /* ── toggle switch ──────────────────────────────────────────────────────── */
 .switch{display:inline-flex;align-items:center;gap:9px;cursor:pointer;font-size:13px}

@@ -20,6 +20,21 @@ async function load() {
   }
 }
 
+/** How many employees share each dataset, and who — so a dataset given to
+ *  more than one person (two people potentially working the same leads) can
+ *  be called out, and the chip can say who else has it. The master leads
+ *  table is deliberately exempt: sharing it with the whole team is normal,
+ *  not a duplication risk, so flagging it would just be noise on every row. */
+function sharedAssignments() {
+  const holders = new Map();
+  employees.forEach(u => (u.assigned_datasets || []).forEach(d => {
+    if (d.is_protected) return;
+    if (!holders.has(d.id)) holders.set(d.id, []);
+    holders.get(d.id).push(u.full_name);
+  }));
+  return holders;
+}
+
 function render() {
   const status = $('status');
 
@@ -30,22 +45,34 @@ function render() {
     return;
   }
 
+  const holders = sharedAssignments();
+
   status.innerHTML =
     '<div class="sechead"><h2>Employees</h2><span class="cbadge">' + employees.length + '</span></div>' +
+    (Array.from(holders.values()).some(names => names.length > 1)
+      ? '<p class="muted" style="margin:0 0 12px;font-size:12.5px">' +
+          '<span class="dchip shared" style="margin-right:6px">example</span>' +
+          'A dataset assigned to more than one person — check nobody is duplicating outreach.</p>'
+      : '') +
     '<div class="tablecard"><div class="scroll"><table><thead><tr>' +
       '<th>Employee</th><th>Assigned datasets</th><th></th>' +
     '</tr></thead><tbody>' +
-    employees.map(row).join('') +
+    employees.map(u => row(u, holders)).join('') +
     '</tbody></table></div></div>';
 
   $$('[data-assign]').forEach(b =>
     b.addEventListener('click', () => openAssignModal(Number(b.dataset.assign))));
 }
 
-function row(u) {
+function row(u, holders) {
   const chips = u.assigned_datasets && u.assigned_datasets.length
     ? '<div class="chiplist">' +
-        u.assigned_datasets.map(d => '<span class="dchip">' + esc(d.display_name) + '</span>').join('') +
+        u.assigned_datasets.map(d => {
+          const names = (holders.get(d.id) || []).filter(name => name !== u.full_name);
+          return names.length
+            ? '<span class="dchip shared" title="Also assigned to ' + esc(names.join(', ')) + '">' + esc(d.display_name) + '</span>'
+            : '<span class="dchip">' + esc(d.display_name) + '</span>';
+        }).join('') +
       '</div>'
     : '<span class="blank">Not assigned to any dataset yet</span>';
 

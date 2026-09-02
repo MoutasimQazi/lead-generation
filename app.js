@@ -61,7 +61,7 @@ function bindPasswordToggles(root = document) {
   $$('.pwtoggle', root).forEach((button) => {
     if (button.dataset.pwBound) return;
     button.dataset.pwBound = '1';
-    const input = button.previousElementSibling;
+    const input = button.parentElement.querySelector('input');
     if (!input) return;
 
     button.addEventListener('click', () => {
@@ -253,6 +253,7 @@ function renderNav(active) {
 
   const links = [
     { id: 'search', label: 'Search', href: 'index.html' },
+    { id: 'dashboard', label: 'Dashboard', href: 'dashboard.html', admin: true },
     { id: 'datasets', label: 'Datasets', href: 'datasets.html' },
     { id: 'upload', label: 'Upload', href: 'upload.html', admin: true },
     { id: 'users', label: 'Users', href: 'users.html', admin: true },
