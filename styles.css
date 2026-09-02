@@ -39,6 +39,10 @@
   --danger-bg:#FDF1EE;
   --danger-line:rgba(196,50,31,.22);
 
+  /* lead flags */
+  --flag-contacted:#2F6FED;
+  --flag-unreachable:#C9891F;
+
   --r-card:16px;
   --r-sm:10px;
   --r-pill:999px;
@@ -336,6 +340,33 @@ td.st{color:var(--ink-2)}
 td.web a{color:var(--primary-ink);text-decoration:none;font-size:12.5px}
 td.web a:hover{text-decoration:underline}
 .blank{color:var(--ink-3);opacity:.5}
+
+/* ── lead flags ─────────────────────────────────────────────────────── */
+.flagcell{white-space:nowrap}
+.flag-select{
+  width:100%;max-width:150px;border:1px solid var(--line);border-radius:var(--r-pill);
+  padding:5px 10px;font:600 11px var(--font-sans);letter-spacing:.02em;
+  background:var(--sunken);color:var(--ink-2);cursor:pointer;
+}
+.flag-select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-glow)}
+.flag-select.contacted{background:rgba(47,111,237,.14);color:var(--flag-contacted);border-color:transparent}
+.flag-select.unreachable{background:rgba(201,137,31,.14);color:var(--flag-unreachable);border-color:transparent}
+.flag-select.won{background:rgba(18,133,90,.14);color:var(--mobile);border-color:transparent}
+.flag-select.lost{background:var(--danger-bg);color:var(--danger);border-color:transparent}
+.flag-meta{display:block;margin-top:4px;font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+
+tr.flag-row-contacted td{background:rgba(47,111,237,.05)}
+tr.flag-row-unreachable td{background:rgba(201,137,31,.06)}
+tr.flag-row-won td{background:rgba(18,133,90,.06)}
+tr.flag-row-lost td{background:rgba(196,50,31,.05)}
+
+.flag-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--ink-3);margin:0 0 12px}
+.flag-legend span{display:inline-flex;align-items:center;gap:5px}
+.flag-legend i{width:8px;height:8px;border-radius:50%;flex:none}
+.flag-legend i.contacted{background:var(--flag-contacted)}
+.flag-legend i.unreachable{background:var(--flag-unreachable)}
+.flag-legend i.won{background:var(--mobile)}
+.flag-legend i.lost{background:var(--danger)}
 
 .pager{
   display:flex;align-items:center;gap:14px;padding:14px 16px;

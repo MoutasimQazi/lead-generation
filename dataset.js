@@ -265,7 +265,11 @@ async function loadRows() {
   }
 }
 
+let currentRows = null;
+
 function renderRows(data) {
+  currentRows = data;
+
   if (!data.rows.length) {
     $('status').innerHTML = '<div class="empty"><h3>' +
       (term ? 'Nothing matches "' + esc(term) + '"' : 'No rows yet') + '</h3>' +
@@ -298,8 +302,9 @@ function renderRows(data) {
 
   $('status').innerHTML =
     '<div class="sechead"><h2>Rows</h2><span class="cbadge">' + fmt(data.total) + '</span></div>' +
+    flagLegend() +
     '<div class="tablecard"><div class="scroll"><table>' +
-      '<thead><tr>' + head + '</tr></thead>' +
+      '<thead><tr><th>Status</th>' + head + '</tr></thead>' +
       '<tbody>' + data.rows.map(rowHtml).join('') + '</tbody>' +
     '</table></div><div class="pager" id="pager"></div></div>';
 
@@ -325,14 +330,82 @@ function renderRows(data) {
       loadRows();
     }, 300);
   }));
+
+  $$('[data-flag-select]').forEach(select => select.addEventListener('change', event => {
+    setRowFlag(Number(event.target.dataset.flagSelect), event.target.value);
+  }));
+}
+
+const FLAG_LABELS = { contacted: 'Contacted', unreachable: 'Unable to contact', won: 'Won', lost: 'Lost' };
+
+function flagLegend() {
+  return '<div class="flag-legend">' +
+    '<span>Lead status:</span>' +
+    Object.keys(FLAG_LABELS).map(status =>
+      '<span><i class="' + status + '"></i>' + FLAG_LABELS[status] + '</span>').join('') +
+    '</div>';
+}
+
+function flagSelectHtml(row) {
+  const status = row.flag ? row.flag.status : '';
+  const options = ['<option value="">No status</option>'].concat(
+    Object.keys(FLAG_LABELS).map(key =>
+      '<option value="' + key + '"' + (status === key ? ' selected' : '') + '>' + FLAG_LABELS[key] + '</option>')
+  );
+
+  return '<td class="flagcell">' +
+    '<select class="flag-select' + (status ? ' ' + status : '') + '" data-flag-select="' + row._row_id + '">' +
+      options.join('') +
+    '</select>' +
+    (row.flag
+      ? '<span class="flag-meta" title="' + esc(row.flag.set_by || 'Unknown') + ' · ' + esc(row.flag.set_at) + '">' +
+          'by ' + esc(row.flag.set_by || 'Unknown') + ' · ' + esc(row.flag.set_at.slice(0, 16)) +
+        '</span>'
+      : '') +
+  '</td>';
 }
 
 function rowHtml(row) {
-  return '<tr>' + columns.map(column => {
-    const value = row[column.name];
-    return '<td>' + (value === null || value === undefined || value === ''
-      ? '<span class="blank">—</span>' : esc(value)) + '</td>';
-  }).join('') + '</tr>';
+  const flagClass = row.flag ? ' flag-row-' + row.flag.status : '';
+  return '<tr class="lead-row' + flagClass + '" data-row-id="' + row._row_id + '">' +
+    flagSelectHtml(row) +
+    columns.map(column => {
+      const value = row[column.name];
+      return '<td>' + (value === null || value === undefined || value === ''
+        ? '<span class="blank">—</span>' : esc(value)) + '</td>';
+    }).join('') +
+  '</tr>';
+}
+
+async function setRowFlag(rowId, status) {
+  const select = document.querySelector('[data-flag-select="' + rowId + '"]');
+  const tr = select ? select.closest('tr') : null;
+
+  try {
+    if (select) select.disabled = true;
+    const result = await apiPatch('api/datasets/' + id + '/rows/' + rowId + '/flag', { status: status || null });
+
+    if (currentRows) {
+      const row = currentRows.rows.find(r => Number(r._row_id) === rowId);
+      if (row) row.flag = result.flag;
+    }
+
+    if (tr) {
+      tr.className = 'lead-row' + (result.flag ? ' flag-row-' + result.flag.status : '');
+      const cell = tr.querySelector('.flagcell');
+      if (cell) cell.outerHTML = flagSelectHtml({ _row_id: rowId, flag: result.flag });
+      const newSelect = tr.querySelector('[data-flag-select]');
+      if (newSelect) newSelect.addEventListener('change', event =>
+        setRowFlag(Number(event.target.dataset.flagSelect), event.target.value));
+    }
+
+    toast(status ? 'Marked as ' + FLAG_LABELS[status].toLowerCase() + '.' : 'Status cleared.');
+  } catch (err) {
+    toast(err.message, true);
+    if (select) select.value = (currentRows && currentRows.rows.find(r => Number(r._row_id) === rowId) || {}).flag?.status || '';
+  } finally {
+    if (select && select.isConnected) select.disabled = false;
+  }
 }
 
 function renderPager(data) {

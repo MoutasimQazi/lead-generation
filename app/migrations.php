@@ -99,6 +99,24 @@ function migration_statements(): array
                 REFERENCES app_users(id) ON DELETE SET NULL
             ) $charset",
 
+        // One flag per lead row. Keyed on (dataset_id, row_id) rather than
+        // living as a column on each dataset's own table, since those tables
+        // are dropped and recreated by re-imports and their columns come
+        // from arbitrary uploaded headers — this survives both.
+        'lead_flags' => "
+            CREATE TABLE IF NOT EXISTS lead_flags (
+              dataset_id INT UNSIGNED NOT NULL,
+              row_id     BIGINT UNSIGNED NOT NULL,
+              status     ENUM('contacted','unreachable','won','lost') NOT NULL,
+              set_by     INT UNSIGNED NULL,
+              set_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (dataset_id, row_id),
+              CONSTRAINT fk_flag_dataset FOREIGN KEY (dataset_id)
+                REFERENCES datasets(id) ON DELETE CASCADE,
+              CONSTRAINT fk_flag_user FOREIGN KEY (set_by)
+                REFERENCES app_users(id) ON DELETE SET NULL
+            ) $charset",
+
         'upload_stages' => "
             CREATE TABLE IF NOT EXISTS upload_stages (
               id         CHAR(32) NOT NULL,
@@ -270,7 +288,7 @@ function run_migrations(): array
  */
 function ensure_management_schema(): void
 {
-    $required = ['folders', 'datasets', 'dataset_assignments', 'upload_stages', 'import_jobs', 'bulk_import_jobs', 'chunk_uploads', 'audit_log'];
+    $required = ['folders', 'datasets', 'dataset_assignments', 'lead_flags', 'upload_stages', 'import_jobs', 'bulk_import_jobs', 'chunk_uploads', 'audit_log'];
     $missing  = false;
 
     foreach ($required as $table) {

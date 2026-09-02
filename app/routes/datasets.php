@@ -549,6 +549,8 @@ function route_rows_list(int $id): never
     }
     $last = $rows === [] ? null : $rows[array_key_last($rows)];
 
+    attach_row_flags($id, $rows);
+
     json_ok([
         'rows'    => $rows,
         'columns' => $columns,
@@ -649,6 +651,95 @@ function row_exists(string $table, int $rowId): bool
         'SELECT ' . qsys('_row_id') . ' FROM ' . qi($table) . ' WHERE ' . qsys('_row_id') . ' = ?',
         [$rowId]
     ) !== null;
+}
+
+/** Every status a lead row can be flagged with, and what the UI calls it. */
+const LEAD_FLAG_STATUSES = [
+    'contacted'   => 'Contacted',
+    'unreachable' => 'Unable to contact',
+    'won'         => 'Won',
+    'lost'        => 'Lost',
+];
+
+/** Merges each row's flag (if any) into it, in one query for the whole page. */
+function attach_row_flags(int $datasetId, array &$rows): void
+{
+    if ($rows === []) {
+        return;
+    }
+
+    $rowIds = array_map(static fn(array $r): int => (int) $r['_row_id'], $rows);
+    $marks  = implode(',', array_fill(0, count($rowIds), '?'));
+
+    $flags = [];
+    foreach (db_all(
+        'SELECT f.row_id, f.status, f.set_at, u.full_name AS set_by_name
+           FROM lead_flags f
+           LEFT JOIN app_users u ON u.id = f.set_by
+          WHERE f.dataset_id = ? AND f.row_id IN (' . $marks . ')',
+        array_merge([$datasetId], $rowIds)
+    ) as $f) {
+        $flags[(int) $f['row_id']] = [
+            'status'   => $f['status'],
+            'label'    => LEAD_FLAG_STATUSES[$f['status']] ?? $f['status'],
+            'set_by'   => $f['set_by_name'],
+            'set_at'   => $f['set_at'],
+        ];
+    }
+
+    foreach ($rows as &$row) {
+        $row['flag'] = $flags[(int) $row['_row_id']] ?? null;
+    }
+    unset($row);
+}
+
+/**
+ * Sets or clears a lead's status. Open to any user with access to the
+ * dataset (admin, or an assigned employee — same check load_dataset() already
+ * makes) rather than admin-only: this tracks outreach work, not data edits,
+ * so it deliberately skips assert_editable() and works on the protected
+ * master table too.
+ */
+function route_row_flag_update(int $id, int $rowId): never
+{
+    $user = require_auth();
+    require_csrf();
+
+    $d = load_dataset($id);
+
+    if (!row_exists($d['table_name'], $rowId)) {
+        fail('That row no longer exists.', 404);
+    }
+
+    $status = json_body()['status'] ?? null;
+
+    if ($status === null || $status === '') {
+        db_exec('DELETE FROM lead_flags WHERE dataset_id = ? AND row_id = ?', [$id, $rowId]);
+        audit('row.flag_clear', $user, $id, ['row_id' => $rowId]);
+        json_ok(['flag' => null]);
+    }
+
+    if (!is_string($status) || !array_key_exists($status, LEAD_FLAG_STATUSES)) {
+        fail('Status must be one of: ' . implode(', ', array_keys(LEAD_FLAG_STATUSES)) . '.', 422);
+    }
+
+    db_exec(
+        'INSERT INTO lead_flags (dataset_id, row_id, status, set_by)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE status = VALUES(status), set_by = VALUES(set_by), set_at = CURRENT_TIMESTAMP',
+        [$id, $rowId, $status, (int) $user['id']]
+    );
+
+    audit('row.flag_set', $user, $id, ['row_id' => $rowId, 'status' => $status]);
+
+    json_ok([
+        'flag' => [
+            'status' => $status,
+            'label'  => LEAD_FLAG_STATUSES[$status],
+            'set_by' => $user['full_name'],
+            'set_at' => date('Y-m-d H:i:s'),
+        ],
+    ]);
 }
 
 function route_rows_delete(int $id, int $rowId): never

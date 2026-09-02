@@ -104,8 +104,9 @@ function routes(): array
         ['GET',    '/api/datasets/{id}/rows',        'route_rows_list'],
         ['POST',   '/api/datasets/{id}/rows',        'route_rows_create'],
         ['DELETE', '/api/datasets/{id}/rows',        'route_rows_delete_by_file'],
-        ['PATCH',  '/api/datasets/{id}/rows/{row}',  'route_rows_update'],
-        ['DELETE', '/api/datasets/{id}/rows/{row}',  'route_rows_delete'],
+        ['PATCH',  '/api/datasets/{id}/rows/{row}',       'route_rows_update'],
+        ['DELETE', '/api/datasets/{id}/rows/{row}',       'route_rows_delete'],
+        ['PATCH',  '/api/datasets/{id}/rows/{row}/flag',  'route_row_flag_update'],
 
         ['POST',   '/api/datasets/{id}/columns',          'route_columns_create'],
         ['PATCH',  '/api/datasets/{id}/columns/{name}',   'route_columns_update'],
