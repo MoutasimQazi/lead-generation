@@ -32,26 +32,30 @@ function render() {
   $('status').innerHTML =
     kpiRow(totals) +
 
-    '<div class="chart-card">' +
-      '<h2>Leads worked, by employee</h2>' +
-      '<p class="sub">Every status an employee has set, across all datasets, busiest first.</p>' +
-      (employees.length
-        ? chartLegend() + '<div class="barrows" id="flagBars"></div>'
-        : '<p class="empty-note">No employee accounts yet.</p>') +
-    '</div>' +
+    '<div class="dashboard-grid">' +
 
-    '<div class="chart-card">' +
-      '<h2>AI searches, by employee</h2>' +
-      '<p class="sub">Questions asked in the last 30 days.</p>' +
-      (employees.length
-        ? '<div class="barrows" id="searchBars"></div>'
-        : '<p class="empty-note">No employee accounts yet.</p>') +
-    '</div>' +
+      '<div class="chart-card">' +
+        '<h2>Leads worked, by employee</h2>' +
+        '<p class="sub">Busiest first.</p>' +
+        (employees.length
+          ? chartLegend() + '<div class="barrows scrollbox" id="flagBars"></div>'
+          : '<p class="empty-note">No employee accounts yet.</p>') +
+      '</div>' +
 
-    '<div class="chart-card">' +
-      '<h2>Lead activity</h2>' +
-      '<p class="sub">Status changes per day, last 30 days, across the whole team.</p>' +
-      '<svg class="trendchart" id="trendSvg" viewBox="0 0 640 170"></svg>' +
+      '<div class="chart-card">' +
+        '<h2>AI searches, by employee</h2>' +
+        '<p class="sub">Last 30 days.</p>' +
+        (employees.length
+          ? '<div class="barrows scrollbox" id="searchBars"></div>'
+          : '<p class="empty-note">No employee accounts yet.</p>') +
+      '</div>' +
+
+      '<div class="chart-card">' +
+        '<h2>Lead activity</h2>' +
+        '<p class="sub">Status changes per day, last 30 days, team-wide.</p>' +
+        '<svg class="trendchart" id="trendSvg" viewBox="0 0 340 150"></svg>' +
+      '</div>' +
+
     '</div>' +
 
     '<div class="sechead" style="margin-top:4px"><h2>By employee</h2><span class="cbadge">' + employees.length + '</span></div>' +
@@ -91,7 +95,7 @@ function chartLegend() {
 
 function renderFlagBars(employees) {
   const host = $('flagBars');
-  const W = 300, H = 20, gap = 2;
+  const W = 300, H = 16, gap = 2;
   const max = Math.max(1, ...employees.map(e => e.total_flagged));
 
   host.innerHTML = employees.map(e => {
@@ -130,7 +134,7 @@ function renderFlagBars(employees) {
 function renderSearchBars(employees) {
   const host = $('searchBars');
   const sorted = [...employees].sort((a, b) => b.searches_30d - a.searches_30d);
-  const W = 300, H = 20;
+  const W = 300, H = 16;
   const max = Math.max(1, ...sorted.map(e => e.searches_30d));
   const primary = cssVar('--primary');
 
@@ -172,7 +176,7 @@ function renderTrend(daily) {
   const svg = $('trendSvg');
   if (!svg || !daily.length) return;
 
-  const W = 640, H = 170, padL = 34, padR = 12, padT = 14, padB = 26;
+  const W = 340, H = 150, padL = 28, padR = 8, padT = 10, padB = 18;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const max = niceCeil(Math.max(1, ...daily.map(d => d.count)));
 

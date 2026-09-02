@@ -546,7 +546,7 @@ select:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px var(-
 .dchip.shared{background:var(--danger-bg);border-color:var(--danger-line);color:var(--danger)}
 
 /* ── admin dashboard ────────────────────────────────────────────────────── */
-.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin:18px 0 26px}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin:18px 0 16px}
 .stat-tile{
   background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);
   padding:16px 18px;box-shadow:var(--shadow);
@@ -555,22 +555,29 @@ select:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px var(-
 .stat-tile .value{font-size:25px;font-weight:700;margin-top:7px;letter-spacing:-.02em;color:var(--ink)}
 .stat-tile .value.accent{color:var(--primary-ink)}
 
+/* A grid of same-sized small boxes rather than one huge chart per row — each
+   card is capped in height and scrolls its own rows internally, so the page
+   itself barely scrolls even with many employees. */
+.dashboard-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:18px}
+.dashboard-grid .chart-card{margin-bottom:0;display:flex;flex-direction:column;min-height:0}
+
 .chart-card{
   background:var(--card);border:1px solid var(--line);border-left:4px solid var(--bar);
-  border-radius:var(--r-card);box-shadow:var(--shadow);padding:20px 22px;margin-bottom:18px;
+  border-radius:var(--r-card);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:18px;
 }
-.chart-card h2{margin:0 0 3px;font-size:15px;font-weight:700}
-.chart-card .sub{margin:0 0 16px;font-size:12.5px;color:var(--ink-2)}
+.chart-card h2{margin:0 0 2px;font-size:13.5px;font-weight:700}
+.chart-card .sub{margin:0 0 11px;font-size:11.5px;color:var(--ink-2)}
 .chart-card .empty-note{font-size:12.5px;color:var(--ink-3);padding:10px 0}
 
-.chartlegend{display:flex;flex-wrap:wrap;gap:14px;font-size:11.5px;color:var(--ink-3);margin-bottom:16px}
-.chartlegend span{display:inline-flex;align-items:center;gap:6px}
-.chartlegend i{width:9px;height:9px;border-radius:2px;flex:none}
+.chartlegend{display:flex;flex-wrap:wrap;gap:11px;font-size:10.5px;color:var(--ink-3);margin-bottom:11px}
+.chartlegend span{display:inline-flex;align-items:center;gap:5px}
+.chartlegend i{width:8px;height:8px;border-radius:2px;flex:none}
 
-.barrows{display:flex;flex-direction:column;gap:11px}
-.barrow{display:grid;grid-template-columns:132px 1fr 36px;align-items:center;gap:12px}
-.barrow .who{font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.barrow .total{font-size:12.5px;font-weight:700;color:var(--ink-2);font-variant-numeric:tabular-nums;text-align:right}
+.barrows{display:flex;flex-direction:column;gap:8px}
+.barrows.scrollbox{max-height:186px;overflow-y:auto;padding-right:4px;margin-right:-4px}
+.barrow{display:grid;grid-template-columns:84px 1fr 30px;align-items:center;gap:8px}
+.barrow .who{font-size:11.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.barrow .total{font-size:11.5px;font-weight:700;color:var(--ink-2);font-variant-numeric:tabular-nums;text-align:right}
 .barrow svg{display:block;overflow:visible;width:100%}
 .barrow rect{cursor:pointer}
 
