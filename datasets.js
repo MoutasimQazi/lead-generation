@@ -114,10 +114,19 @@ function card(d) {
         '<span class="track"></span>' +
         (d.is_searchable ? 'Use in my search' : 'Admin disabled') + '</label>';
 
+  const assigned = session.user.is_admin
+    ? '<div class="meta-line assigned">' +
+        (d.assigned_names && d.assigned_names.length
+          ? 'Assigned: ' + d.assigned_names.map(esc).join(', ')
+          : '<span class="blank">Unassigned</span>') +
+      '</div>'
+    : '';
+
   return '<a class="dscard' + (d.is_protected ? ' locked' : '') + '" href="dataset.html?id=' + d.id + '">' +
     '<span>' +
       '<span class="title">' + esc(d.display_name) + '</span>' +
       '<div class="meta-line">' + meta + '</div>' +
+      assigned +
     '</span>' +
     '<span class="spacer"></span>' +
     statusTag(d) +

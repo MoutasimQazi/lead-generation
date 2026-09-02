@@ -168,12 +168,29 @@ function route_datasets_list(): never
             : strcasecmp((string) $a['display_name'], (string) $b['display_name']);
     });
 
+    // Who each dataset is assigned to, for the admin list view only —
+    // employees already know their own assignments from which rows they see.
+    $assignedNames = [];
+    if ($user['role'] === 'admin') {
+        foreach (db_all(
+            'SELECT a.dataset_id, u.full_name
+               FROM dataset_assignments a
+               JOIN app_users u ON u.id = a.user_id
+              ORDER BY u.full_name ASC'
+        ) as $a) {
+            $assignedNames[(int) $a['dataset_id']][] = $a['full_name'];
+        }
+    }
+
     $out = [];
 
     foreach ($rows as $r) {
-        $summary                = dataset_summary($r);
-        $summary['folder_name'] = $r['folder_name'];
-        $out[]                  = $summary;
+        $summary                  = dataset_summary($r);
+        $summary['folder_name']   = $r['folder_name'];
+        if ($user['role'] === 'admin') {
+            $summary['assigned_names'] = $assignedNames[(int) $r['id']] ?? [];
+        }
+        $out[] = $summary;
     }
 
     json_ok(['datasets' => $out]);

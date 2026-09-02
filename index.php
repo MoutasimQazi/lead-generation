@@ -111,10 +111,12 @@ function routes(): array
         ['PATCH',  '/api/datasets/{id}/columns/{name}',   'route_columns_update'],
         ['DELETE', '/api/datasets/{id}/columns/{name}',   'route_columns_delete'],
 
-        ['GET',    '/api/users',      'route_users_list'],
-        ['POST',   '/api/users',      'route_users_create'],
-        ['PATCH',  '/api/users/{id}', 'route_users_update'],
-        ['DELETE', '/api/users/{id}', 'route_users_delete'],
+        ['GET',    '/api/users',                  'route_users_list'],
+        ['POST',   '/api/users',                  'route_users_create'],
+        ['PATCH',  '/api/users/{id}',              'route_users_update'],
+        ['DELETE', '/api/users/{id}',              'route_users_delete'],
+        ['GET',    '/api/users/{id}/assignments', 'route_user_assignments_get'],
+        ['PATCH',  '/api/users/{id}/assignments', 'route_user_assignments_update'],
 
         ['GET',    '/api/audit',      'route_audit_list'],
     ];

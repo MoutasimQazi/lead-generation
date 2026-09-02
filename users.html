@@ -61,8 +61,21 @@
   </div>
 </div>
 
+<!-- ── assign datasets ────────────────────────────────────────────────── -->
+<div class="modal" id="assignModal">
+  <div class="modal-card wide">
+    <h2>Assign datasets</h2>
+    <p class="sub">Choose which datasets <strong id="assignName"></strong> can search and export.</p>
+    <div class="assignment-list" id="assignList"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('assignModal')">Cancel</button>
+      <button class="btn btn-primary" id="assignSave">Save assignments</button>
+    </div>
+  </div>
+</div>
+
 <script src="app.js?v=20260901-3"></script>
-<script src="users.js"></script>
+<script src="users.js?v=20260901-4"></script>
 <script type="application/json">
 let users = [];
 
