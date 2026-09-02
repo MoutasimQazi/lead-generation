@@ -264,16 +264,19 @@ function renderNav(active) {
     '<a class="logo" href="index.html" title="Lead Search">' +
       '<img src="logo.png?v=20260822" alt="Movenetics Digital">' +
     '</a>' +
-    links.map((l) =>
-      '<a class="navitem' + (l.id === active ? ' active' : '') + '" href="' + l.href + '">' +
-        esc(l.label) + '</a>'
-    ).join('') +
-    '<span class="spacer"></span>' +
-    '<button class="theme-toggle" type="button">Theme</button>' +
-    '<span class="pill-dark">' + esc(u.role) + '</span>' +
-    '<span class="avatar" title="' + esc(u.email) + '">' + esc(initials(u.full_name)) + '</span>' +
-    '<span class="whoami">' + esc(u.full_name) + '</span>' +
-    '<button class="signout" id="signout">Sign out</button>';
+    '<div class="navlinks">' +
+      links.map((l) =>
+        '<a class="navitem' + (l.id === active ? ' active' : '') + '" href="' + l.href + '">' +
+          esc(l.label) + '</a>'
+      ).join('') +
+    '</div>' +
+    '<div class="navcluster">' +
+      '<button class="theme-toggle" type="button">Theme</button>' +
+      '<span class="pill-dark">' + esc(u.role) + '</span>' +
+      '<span class="avatar" title="' + esc(u.email) + '">' + esc(initials(u.full_name)) + '</span>' +
+      '<span class="whoami">' + esc(u.full_name) + '</span>' +
+      '<button class="signout" id="signout">Sign out</button>' +
+    '</div>';
 
   bindThemeToggle(host);
 

@@ -112,11 +112,19 @@ input{font-family:inherit}
 /* ── floating pill nav ──────────────────────────────────────────────── */
 .top{padding:20px 0 0;margin-bottom:34px}
 .nav{
-  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  display:flex;align-items:center;gap:14px;flex-wrap:nowrap;
   background:var(--card);border:1px solid var(--line);
   border-radius:var(--r-pill);box-shadow:var(--shadow);
   padding:9px 12px 9px 20px;
 }
+/* The pill shape only reads correctly as one row — never let it wrap.
+   The links scroll internally instead, so a growing nav never breaks it. */
+.navlinks{
+  display:flex;align-items:center;gap:4px;flex:1;min-width:0;
+  overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none;
+}
+.navlinks::-webkit-scrollbar{display:none}
+.navcluster{display:flex;align-items:center;gap:12px;flex:none}
 .logo{display:flex;align-items:center;gap:10px;min-width:0;cursor:pointer;flex:none}
 .logo img{height:30px;width:auto;display:block}
 :root[data-theme="dark"] .logo img{content:url('logo-dark.png?v=20260823')}
@@ -147,7 +155,6 @@ input{font-family:inherit}
   display:flex;align-items:center;justify-content:center;
 }
 .whoami{font-size:13px;font-weight:600;white-space:nowrap}
-.nav .spacer{flex:1}
 .pill-dark{
   background:var(--pill-dark);color:var(--pill-dark-ink);
   border-radius:var(--r-pill);padding:7px 15px;
@@ -412,12 +419,13 @@ tr.flag-row-lost td{background:rgba(196,50,31,.05)}
 @media (max-width:640px){
   .wrap{padding:0 14px 60px}
   .top{padding:14px 0 0;margin-bottom:26px}
-  .nav{border-radius:22px;padding:12px 14px;gap:10px}
+  .nav{border-radius:22px;padding:10px 12px;gap:8px}
   .logo img{height:26px}
-  .navitem{padding:8px 16px;font-size:13px}
-  .nav .spacer{display:none}
-  .pill-dark{order:3;font-size:10px;padding:6px 12px}
-  .signout{order:4;margin-left:auto}
+  .navitem{padding:8px 14px;font-size:13px}
+  .navlinks{gap:2px}
+  .navcluster{gap:8px}
+  .whoami{display:none}
+  .pill-dark{font-size:10px;padding:6px 10px}
   .hero h1{font-size:29px}
   .ask{flex-direction:column;align-items:stretch;border-radius:20px;padding:10px}
   .ask input{padding:12px;font-size:16px}

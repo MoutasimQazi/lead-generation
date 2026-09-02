@@ -22,15 +22,23 @@ async function load() {
 
 /** How many employees share each dataset, and who — so a dataset given to
  *  more than one person (two people potentially working the same leads) can
- *  be called out, and the chip can say who else has it. The master leads
- *  table is deliberately exempt: sharing it with the whole team is normal,
- *  not a duplication risk, so flagging it would just be noise on every row. */
+ *  be called out, and the chip can say who else has it. Grouped by display
+ *  name rather than dataset id: the same file re-uploaded twice creates two
+ *  separate dataset rows, but to a reader they're still "the same list"
+ *  showing up under two people, which is exactly the duplication this warns
+ *  about. The master leads table is deliberately exempt: sharing it with the
+ *  whole team is normal, not a duplication risk, so flagging it would just
+ *  be noise on every row. */
 function sharedAssignments() {
   const holders = new Map();
   employees.forEach(u => (u.assigned_datasets || []).forEach(d => {
     if (d.is_protected) return;
-    if (!holders.has(d.id)) holders.set(d.id, []);
-    holders.get(d.id).push(u.full_name);
+    const key = d.display_name;
+    if (!holders.has(key)) holders.set(key, []);
+    // Keyed by id, not just name — two employees can share a display name
+    // (e.g. two "Moutasim Qazi" accounts), and a name-only comparison would
+    // wrongly treat them as the same person and hide a real duplicate.
+    holders.get(key).push({ id: u.id, name: u.full_name });
   }));
   return holders;
 }
@@ -49,7 +57,7 @@ function render() {
 
   status.innerHTML =
     '<div class="sechead"><h2>Employees</h2><span class="cbadge">' + employees.length + '</span></div>' +
-    (Array.from(holders.values()).some(names => names.length > 1)
+    (Array.from(holders.values()).some(entries => entries.length > 1)
       ? '<p class="muted" style="margin:0 0 12px;font-size:12.5px">' +
           '<span class="dchip shared" style="margin-right:6px">example</span>' +
           'A dataset assigned to more than one person — check nobody is duplicating outreach.</p>'
@@ -68,9 +76,9 @@ function row(u, holders) {
   const chips = u.assigned_datasets && u.assigned_datasets.length
     ? '<div class="chiplist">' +
         u.assigned_datasets.map(d => {
-          const names = (holders.get(d.id) || []).filter(name => name !== u.full_name);
-          return names.length
-            ? '<span class="dchip shared" title="Also assigned to ' + esc(names.join(', ')) + '">' + esc(d.display_name) + '</span>'
+          const others = (holders.get(d.display_name) || []).filter(entry => entry.id !== u.id);
+          return others.length
+            ? '<span class="dchip shared" title="Also assigned to ' + esc(others.map(entry => entry.name).join(', ')) + '">' + esc(d.display_name) + '</span>'
             : '<span class="dchip">' + esc(d.display_name) + '</span>';
         }).join('') +
       '</div>'

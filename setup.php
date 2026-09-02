@@ -94,7 +94,7 @@ function h(string $s): string
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=20260902-2">
+<link rel="stylesheet" href="styles.css?v=20260902-3">
 </head>
 <body class="centered">
 <div class="authwrap">
@@ -193,6 +193,6 @@ function h(string $s): string
 <p class="authfoot">© Movenetics Digital · Lead Search</p>
 </div>
 
-<script src="app.js?v=20260902-2"></script>
+<script src="app.js?v=20260902-3"></script>
 </body>
 </html>
