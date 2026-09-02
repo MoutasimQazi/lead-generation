@@ -1,5 +1,4 @@
 {
-  "name": "Movenetics - Dynamic Lead Search API - v1",
   "nodes": [
     {
       "parameters": {
@@ -10,46 +9,76 @@
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
-      "position": [0, 0],
-      "id": "1d235481-efc9-4f70-a998-411aeac5d002",
+      "position": [
+        400,
+        448
+      ],
+      "id": "d1a12059-92ca-4d96-9f1f-59138ea3696d",
       "name": "Webhook",
       "webhookId": "80017176-ad93-4eab-a9e2-2c0157716328"
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body ?? {};\nconst question = String(body.question ?? '').trim();\nconst askedBy = String(body.asked_by ?? '').slice(0, 254);\nconst supplied = Array.isArray(body.schemas) ? body.schemas : [];\nconst ident = /^[a-z][a-z0-9_]{0,62}$/;\n\nif (!question) return [{json:{valid:false,statusCode:400,error:'Missing question'}}];\nif (question.length > 2000) return [{json:{valid:false,statusCode:400,error:'Question is too long (maximum 2,000 characters)'}}];\nif (!supplied.length) return [{json:{valid:false,statusCode:422,error:'No searchable datasets are available'}}];\n\nconst schemas = supplied.filter(s => s && ident.test(String(s.table ?? '')) && Array.isArray(s.columns)).map(s => ({\n  table: String(s.table),\n  label: String(s.label ?? s.table).slice(0,150),\n  description: String(s.description ?? '').slice(0,500),\n  row_count: Math.max(0, Number(s.row_count ?? 0)),\n  columns: s.columns.filter(c => c && ident.test(String(c.name ?? ''))).map(c => ({\n    name: String(c.name),\n    type: String(c.type ?? 'TEXT').slice(0,100),\n    label: String(c.label ?? c.name).slice(0,100),\n    description: String(c.description ?? '').slice(0,300),\n    values: Array.isArray(c.values) ? c.values.slice(0,100).map(v => String(v).slice(0,200)) : []\n  }))\n})).filter(s => s.columns.length);\n\nif (!schemas.length) return [{json:{valid:false,statusCode:422,error:'No valid searchable schemas were supplied'}}];\n\nconst schemaText = schemas.map(s => {\n  const cols = s.columns.map(c => {\n    let line = `- ${c.name} (${c.type})`;\n    if (c.label !== c.name) line += `; label: ${c.label}`;\n    if (c.description) line += `; ${c.description}`;\n    if (c.values.length) line += `; known values: ${c.values.join(' | ')}`;\n    return line;\n  }).join('\\n');\n  let rules = '';\n  if (s.table === 'leads') rules = '\\nSPECIAL RULES FOR leads:\\n- sectors_norm is a comma-separated exact vocabulary. Use operator contains_any with one or more exact sector values.\\n- primary_sector is only the main trade.\\n- has_email stores Yes or No as strings.\\n- phone_type normally stores mobile, fixed line, voip, or other.\\n- contact_person may contain multiple people in one field.\\n- Empty values may be either NULL or an empty string.';\n  return `TABLE: ${s.table}\\nDISPLAY NAME: ${s.label}\\nDESCRIPTION: ${s.description || 'No description provided'}\\nAPPROXIMATE ROWS: ${s.row_count}\\nCOLUMNS:\\n${cols}${rules}`;\n}).join('\\n\\n');\n\nreturn [{json:{valid:true,question,asked_by:askedBy,schemas,schema_text:schemaText}}];"
+        "jsCode": "const body = $input.first().json.body ?? {};\nconst question = String(body.question ?? '').trim();\nconst askedBy = String(body.asked_by ?? '').slice(0, 254);\nconst supplied = Array.isArray(body.schemas) ? body.schemas : [];\nconst maxRows = Math.min(Math.max(Number(body.max_rows) || 250, 1), 5000);\nconst ident = /^[a-z][a-z0-9_]{0,62}$/;\n\n// Columns holding a comma-separated list. Send multi_value:true on a column in\n// the request payload to add one without editing this node.\nconst MULTI_VALUE = new Set(['sectors_norm', 'categories', 'region_tags_raw']);\n// Columns that hold numbers even when the DDL says TEXT. Drives CAST(...) so\n// that founded > 2015 and ORDER BY founded DESC compare numerically.\nconst NUMERIC_HINT = new Set(['founded', 'funding_total_usd', 'funding_rounds',\n  'year', 'employees', 'revenue', 'amount', 'headcount', 'age', 'rank', 'score']);\nconst NUMERIC_TYPE = /int|decimal|numeric|float|double|real|year|bit/i;\n\nif (!question) return [{json:{valid:false,statusCode:400,error:'Missing question'}}];\nif (question.length > 2000) return [{json:{valid:false,statusCode:400,error:'Question is too long (maximum 2,000 characters)'}}];\nif (!supplied.length) return [{json:{valid:false,statusCode:422,error:'No searchable datasets are available'}}];\n\nconst schemas = supplied.filter(s => s && ident.test(String(s.table ?? '')) && Array.isArray(s.columns)).map(s => ({\n  table: String(s.table),\n  label: String(s.label ?? s.table).slice(0,150),\n  description: String(s.description ?? '').slice(0,500),\n  row_count: Math.max(0, Number(s.row_count ?? 0)),\n  columns: s.columns.filter(c => c && ident.test(String(c.name ?? ''))).map(c => {\n    const name = String(c.name);\n    const type = String(c.type ?? 'TEXT').slice(0,100);\n    return {\n      name,\n      type,\n      label: String(c.label ?? name).slice(0,100),\n      description: String(c.description ?? '').slice(0,300),\n      multi: c.multi_value === true || MULTI_VALUE.has(name),\n      numeric: NUMERIC_TYPE.test(type) || c.numeric === true || NUMERIC_HINT.has(name),\n      declared_numeric: NUMERIC_TYPE.test(type),\n      values: Array.isArray(c.values) ? c.values.slice(0,100).map(v => String(v).slice(0,200)) : []\n    };\n  })\n})).filter(s => s.columns.length);\n\nif (!schemas.length) return [{json:{valid:false,statusCode:422,error:'No valid searchable schemas were supplied'}}];\n\n// Datasets with an identical column set are shards of one logical dataset.\n// Only one can be queried, so tell the planner which shard is biggest.\nconst signature = s => s.columns.map(c => c.name).sort().join(',');\nconst groups = new Map();\nfor (const s of schemas) {\n  const k = signature(s);\n  if (!groups.has(k)) groups.set(k, []);\n  groups.get(k).push(s);\n}\nfor (const members of groups.values()) {\n  const biggest = members.reduce((a,b) => b.row_count > a.row_count ? b : a);\n  for (const s of members) {\n    s.shard_siblings = members.filter(m => m.table !== s.table).map(m => m.table);\n    s.preferred_shard = biggest.table;\n  }\n}\n\nconst schemaText = schemas.map(s => {\n  const cols = s.columns.map(c => {\n    let line = `- ${c.name} (${c.type})`;\n    if (c.label !== c.name) line += `; label: ${c.label}`;\n    if (c.description) line += `; ${c.description}`;\n    if (c.multi) line += '; MULTI-VALUE comma-separated list';\n    if (c.numeric) line += '; numeric';\n    line += c.values.length ? `; known values: ${c.values.join(' | ')}` : '; no known value list, treat as free text';\n    return line;\n  }).join('\\n');\n  const multiCols = s.columns.filter(c => c.multi).map(c => c.name);\n  let rules = '';\n  if (multiCols.length) rules += `\\nMULTI-VALUE COLUMNS: ${multiCols.join(', ')}`;\n  if (s.shard_siblings.length) {\n    rules += `\\nSHARD: same columns as ${s.shard_siblings.join(', ')}. Only one may be queried;`;\n    rules += s.preferred_shard === s.table ? ' this is the largest shard, prefer it.' : ` prefer ${s.preferred_shard} (largest).`;\n  }\n  if (s.table === 'leads') rules += '\\nSPECIAL RULES FOR leads:\\n- primary_sector is only the main trade.\\n- has_email stores Yes or No as strings.\\n- phone_type normally stores mobile, fixed line, voip, or other.\\n- contact_person may contain multiple people in one field.\\n- Empty values may be either NULL or an empty string.';\n  return `TABLE: ${s.table}\\nDISPLAY NAME: ${s.label}\\nDESCRIPTION: ${s.description || 'No description provided'}\\nAPPROXIMATE ROWS: ${s.row_count}\\nCOLUMNS:\\n${cols}${rules}`;\n}).join('\\n\\n');\n\nreturn [{json:{valid:true,question,asked_by:askedBy,max_rows:maxRows,schemas,schema_text:schemaText}}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [240, 0],
-      "id": "281487da-0a85-4783-871b-48b71e3183b8",
+      "position": [
+        640,
+        448
+      ],
+      "id": "84716732-925f-4bb5-a0bd-e48a1d4f85a1",
       "name": "Prepare Dynamic Schema"
     },
     {
       "parameters": {
         "conditions": {
-          "options": {"caseSensitive": true,"leftValue": "","typeValidation": "strict","version": 2},
-          "conditions": [{"id": "a6dc8580-faf0-45f9-a1b7-a85b1f491659","leftValue": "={{ $json.valid }}","rightValue": true,"operator": {"type": "boolean","operation": "true","singleValue": true}}],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a6dc8580-faf0-45f9-a1b7-a85b1f491659",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
           "combinator": "and"
         },
         "options": {}
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [480, 0],
-      "id": "a5e9687c-e565-447a-857a-65f2d0ee8455",
+      "position": [
+        880,
+        448
+      ],
+      "id": "68fb3069-03bc-447b-8ec2-3be07c127414",
       "name": "Request Valid?"
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ { success: false, error: $json.error } }}",
-        "options": {"responseCode": "={{ $json.statusCode || 400 }}"}
+        "options": {
+          "responseCode": "={{ $json.statusCode || 400 }}"
+        }
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [720, 240],
-      "id": "1ad5ebc2-ed47-40ca-81f3-019e6a4ba849",
+      "position": [
+        1120,
+        688
+      ],
+      "id": "135883a2-291b-4a91-be12-fa18e4a40021",
       "name": "Respond Request Error"
     },
     {
@@ -59,7 +88,7 @@
         "messages": {
           "messageValues": [
             {
-              "message": "=You convert a plain-English data question into a structured query plan. You NEVER write SQL. You may use only the datasets, columns, and known values below. Never invent a table, column, relationship, or controlled value.\n\nAVAILABLE DATASETS\n═══════════════════════════════════════════════════════════════════════\n{{ $json.schema_text }}\n═══════════════════════════════════════════════════════════════════════\n\nRULES\n1. Choose exactly one table. Cross-table joins are not supported.\n2. Choose only useful output columns; never automatically request every column.\n3. intent=list for rows, count for totals, aggregate for grouped counts.\n4. Maximum list limit is 250. If omitted, use 250.\n5. count has no output columns or limit.\n6. aggregate must provide group_by and is automatically sorted by total descending.\n7. Allowed operators: equals, not_equals, contains, contains_any, starts_with, ends_with, is_empty, is_not_empty, greater_than, greater_or_equal, less_than, less_or_equal, between, in.\n8. contains_any is only for a comma-separated exact-vocabulary column such as leads.sectors_norm. Its value must be an array.\n9. Use only known values when a column provides them. For free-text columns, preserve user spelling.\n10. If no dataset can answer the question, set answerable=false.\n11. Return JSON only. No Markdown and no prose outside JSON.\n\nOUTPUT\n{\"answerable\":true,\"intent\":\"list|count|aggregate\",\"table\":\"table_name\",\"columns\":[\"column_name\"],\"filters\":[{\"column\":\"column_name\",\"operator\":\"equals\",\"value\":\"value\"}],\"group_by\":[\"column_name\"],\"order_by\":[{\"column\":\"column_name\",\"direction\":\"asc|desc\"}],\"limit\":250,\"explanation\":\"one sentence\",\"confidence\":\"high|medium|low\"}\n\nUNANSWERABLE OUTPUT\n{\"answerable\":false,\"intent\":null,\"table\":null,\"columns\":[],\"filters\":[],\"group_by\":[],\"order_by\":[],\"limit\":null,\"explanation\":\"what information is unavailable\",\"confidence\":\"low\"}"
+              "message": "=You turn a plain-English business question into a strict JSON query plan. You NEVER write SQL. You may use only the datasets, columns and values described below. Never invent a table, a column, a join or a value.\n\nAVAILABLE DATASETS\n═══════════════════════════════════════════════════════════════════════\n{{ $json.schema_text }}\n═══════════════════════════════════════════════════════════════════════\n\nHOW TO READ THE SCHEMA\n- Every column line ends with either its known values, or the phrase \"no known value list, treat as free text\".\n- \"MULTI-VALUE comma-separated list\" means one cell holds several values, e.g. \"Travel, Tourism, Hospitality\".\n- \"numeric\" means the column holds numbers and supports greater_than, less_than, between and numeric sorting.\n- \"SHARD\" means several datasets hold the same columns and are slices of one larger dataset. Only one can be searched per question, so choose the shard the schema marks as largest unless the user names a dataset.\n\nCHOOSING AN INTENT\n- list: the user wants records, names, contacts, or \"show me / find me / give me\". This is the default.\n- count: the user asks how many, or wants a single total.\n- aggregate: the user wants a breakdown, \"by region\", \"top categories\", \"which sector has most\".\n\nOPERATORS\nequals, not_equals            exact match; only when the column has a known value list\ncontains                      substring match; the safe default for free-text columns\ncontains_any                  match ANY value in an array. On MULTI-VALUE columns it matches whole list entries; on ordinary text columns it becomes an OR of substring matches. Use it whenever one idea has several spellings.\nstarts_with, ends_with        prefix or suffix match\nis_empty, is_not_empty        presence checks; use for \"has an email\", \"with a phone number\"\ngreater_than, greater_or_equal, less_than, less_or_equal, between   numeric columns only\nin                            exact match against an array; only with known values\n\nTRANSLATION GUIDANCE\n1. Fix obvious typos in the question before matching (\"comapnies\" means companies).\n2. When a column has no known value list, never guess a single exact string. Use contains, or contains_any with every plausible spelling. This matters most for places: for the UK send [\"United Kingdom\",\"UK\",\"England\",\"Scotland\",\"Wales\",\"London\"], for the US send [\"United States\",\"USA\",\"US\"].\n3. A location may live in more than one column. Prefer the region or geography column; if the user names a city, prefer the metro or city column.\n4. Map vague business words onto real columns and say so in the explanation:\n   - \"startup\", \"early stage\", \"new\" -> recent founded year, or a small size band, or an early funding band\n   - \"big\", \"enterprise\" -> large size band or high funding\n   - \"active\", \"still trading\" -> the status column\n   - \"contactable\", \"with email\" -> is_not_empty on the email column\n   If a word has no column behind it, ignore it rather than inventing a filter, and mention that in the explanation.\n5. Prefer fewer, broader filters. A question that returns nothing is worse than one that returns too much. Never add a filter the user did not ask for.\n6. Select the columns a human would want to see: the name, the fields that were filtered on, and the contact columns. Between 4 and 8 columns. Never select every column.\n7. Sort only when the user asks for an order (\"newest\", \"largest\", \"top\"). Sort keys must be selected columns. Never sort on a computed total; aggregates are sorted for you.\n8. Set answerable=false only when no dataset holds the information at all. A question that needs a loose match is still answerable.\n\nHARD RULES\n- Exactly one table. No joins.\n- list: limit is at most {{ $json.max_rows }}, default {{ $json.max_rows }}. count: no columns, no limit. aggregate: group_by is required, 1 to 3 columns.\n- contains_any and in take a JSON array of 1 to 50 values. between takes exactly 2 values.\n- At most 8 filters.\n- Output one JSON object and nothing else. No Markdown fence, no commentary.\n\nWORKED EXAMPLES\nQ: \"Travel startup comapnies across UK\"\n{\"answerable\":true,\"intent\":\"list\",\"table\":\"<largest shard>\",\"columns\":[\"company\",\"categories\",\"geo_region\",\"founded\",\"website\",\"email\"],\"filters\":[{\"column\":\"categories\",\"operator\":\"contains_any\",\"value\":[\"Travel\",\"Tourism\",\"Hospitality\"]},{\"column\":\"geo_region\",\"operator\":\"contains_any\",\"value\":[\"United Kingdom\",\"UK\",\"England\",\"Scotland\",\"Wales\",\"London\"]}],\"group_by\":[],\"order_by\":[],\"limit\":250,\"explanation\":\"UK travel companies; startup was read as a broad category match because no maturity column exists.\",\"confidence\":\"medium\"}\n\nQ: \"How many fintech companies have an email address\"\n{\"answerable\":true,\"intent\":\"count\",\"table\":\"<largest shard>\",\"columns\":[],\"filters\":[{\"column\":\"categories\",\"operator\":\"contains_any\",\"value\":[\"FinTech\",\"Financial Services\",\"Finance\"]},{\"column\":\"email\",\"operator\":\"is_not_empty\"}],\"group_by\":[],\"order_by\":[],\"limit\":null,\"explanation\":\"Counts fintech companies with a non-empty email.\",\"confidence\":\"high\"}\n\nQ: \"Break down German companies by primary category\"\n{\"answerable\":true,\"intent\":\"aggregate\",\"table\":\"<largest shard>\",\"columns\":[],\"filters\":[{\"column\":\"geo_region\",\"operator\":\"contains_any\",\"value\":[\"Germany\",\"Deutschland\",\"Berlin\",\"Munich\"]}],\"group_by\":[\"primary_category\"],\"order_by\":[],\"limit\":null,\"explanation\":\"Counts German companies grouped by primary category.\",\"confidence\":\"medium\"}\n\nOUTPUT SHAPE\n{\"answerable\":true,\"intent\":\"list|count|aggregate\",\"table\":\"table_name\",\"columns\":[\"column_name\"],\"filters\":[{\"column\":\"column_name\",\"operator\":\"equals\",\"value\":\"value\"}],\"group_by\":[\"column_name\"],\"order_by\":[{\"column\":\"column_name\",\"direction\":\"asc|desc\"}],\"limit\":250,\"explanation\":\"one sentence naming every assumption\",\"confidence\":\"high|medium|low\"}\n\nUNANSWERABLE SHAPE\n{\"answerable\":false,\"intent\":null,\"table\":null,\"columns\":[],\"filters\":[],\"group_by\":[],\"order_by\":[],\"limit\":null,\"explanation\":\"which information is missing\",\"confidence\":\"low\"}"
             }
           ]
         },
@@ -67,88 +96,149 @@
       },
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.9,
-      "position": [720, -80],
-      "id": "2c2f0097-e345-4948-bf60-5a6e0a873fab",
+      "position": [
+        1120,
+        368
+      ],
+      "id": "db606a42-3843-4be3-9dc3-4e6b13a3e49c",
       "name": "Dynamic Query Planner"
     },
     {
-      "parameters": {"model": "deepseek-v4-flash","options": {}},
+      "parameters": {
+        "model": "deepseek-v4-flash",
+        "options": {}
+      },
       "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
       "typeVersion": 1,
-      "position": [720, -320],
-      "id": "7dde12ce-122e-49ff-b286-56ecb810af19",
+      "position": [
+        1120,
+        128
+      ],
+      "id": "3dc35ebb-d765-4ced-a7ec-bbf058bb4678",
       "name": "DeepSeek Chat Model",
-      "credentials": {"deepSeekApi": {"id": "BdXHRlkArGC7AzzW","name": "DeepSeek account"}}
+      "credentials": {
+        "deepSeekApi": {
+          "id": "BdXHRlkArGC7AzzW",
+          "name": "DeepSeek account"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "const source = $('Prepare Dynamic Schema').first().json;\nconst item = $input.first().json;\nconst raw = item.text ?? item.output ?? item.message?.content ?? item.choices?.[0]?.message?.content ?? '';\nlet plan;\ntry { plan = JSON.parse(String(raw).replace(/^```json\\s*/i,'').replace(/```$/,'').trim()); }\ncatch { return [{json:{valid:false,statusCode:502,error:'The AI returned invalid JSON'}}]; }\nif (plan.answerable === false) return [{json:{valid:false,no_query:true,statusCode:422,error:String(plan.explanation || 'This question cannot be answered from the searchable datasets.')}}];\n\nconst intents = new Set(['list','count','aggregate']);\nconst operators = new Set(['equals','not_equals','contains','contains_any','starts_with','ends_with','is_empty','is_not_empty','greater_than','greater_or_equal','less_than','less_or_equal','between','in']);\nif (!intents.has(plan.intent)) return [{json:{valid:false,statusCode:422,error:'The AI selected an invalid query intent'}}];\nconst schema = source.schemas.find(s => s.table === plan.table);\nif (!schema) return [{json:{valid:false,statusCode:422,error:'The AI selected an unavailable dataset'}}];\nconst allowed = new Set(schema.columns.map(c => c.name));\nconst columns = Array.isArray(plan.columns) ? plan.columns : [];\nconst filters = Array.isArray(plan.filters) ? plan.filters : [];\nconst groupBy = Array.isArray(plan.group_by) ? plan.group_by : [];\nconst orderBy = Array.isArray(plan.order_by) ? plan.order_by : [];\nfor (const c of [...columns,...groupBy]) if (!allowed.has(c)) return [{json:{valid:false,statusCode:422,error:`Unknown column selected: ${c}`}}];\nfor (const o of orderBy) if (!allowed.has(o.column) || !['asc','desc'].includes(String(o.direction).toLowerCase())) return [{json:{valid:false,statusCode:422,error:'Invalid ordering requested'}}];\nfor (const f of filters) {\n  if (!allowed.has(f.column)) return [{json:{valid:false,statusCode:422,error:`Unknown filter column: ${f.column}`}}];\n  if (!operators.has(f.operator)) return [{json:{valid:false,statusCode:422,error:`Invalid filter operator: ${f.operator}`}}];\n  if (f.operator === 'between' && (!Array.isArray(f.value) || f.value.length !== 2)) return [{json:{valid:false,statusCode:422,error:'Between requires exactly two values'}}];\n  if (['in','contains_any'].includes(f.operator) && (!Array.isArray(f.value) || !f.value.length || f.value.length > 50)) return [{json:{valid:false,statusCode:422,error:`${f.operator} requires an array of 1-50 values`}}];\n  if (f.operator === 'contains_any' && f.column !== 'sectors_norm') return [{json:{valid:false,statusCode:422,error:'contains_any is not allowed for this column'}}];\n}\nif (plan.intent === 'aggregate' && !groupBy.length) return [{json:{valid:false,statusCode:422,error:'An aggregate query requires group_by'}}];\n\nconst qi = n => '`' + n + '`';\nconst esc = v => {\n  if (v === null || v === undefined) return 'NULL';\n  if (typeof v === 'number' && Number.isFinite(v)) return String(v);\n  return \"'\" + String(v).replace(/\\\\/g,'\\\\\\\\').replace(/'/g,\"''\").replace(/\\u0000/g,'') + \"'\";\n};\nconst where = [];\nfor (const f of filters) {\n  const c = qi(f.column);\n  switch (f.operator) {\n    case 'equals': where.push(`${c} = ${esc(f.value)}`); break;\n    case 'not_equals': where.push(`${c} <> ${esc(f.value)}`); break;\n    case 'contains': where.push(`LOWER(${c}) LIKE LOWER(${esc('%' + String(f.value) + '%')})`); break;\n    case 'starts_with': where.push(`LOWER(${c}) LIKE LOWER(${esc(String(f.value) + '%')})`); break;\n    case 'ends_with': where.push(`LOWER(${c}) LIKE LOWER(${esc('%' + String(f.value))})`); break;\n    case 'is_empty': where.push(`(${c} IS NULL OR ${c} = '')`); break;\n    case 'is_not_empty': where.push(`(${c} IS NOT NULL AND ${c} <> '')`); break;\n    case 'greater_than': where.push(`${c} > ${esc(f.value)}`); break;\n    case 'greater_or_equal': where.push(`${c} >= ${esc(f.value)}`); break;\n    case 'less_than': where.push(`${c} < ${esc(f.value)}`); break;\n    case 'less_or_equal': where.push(`${c} <= ${esc(f.value)}`); break;\n    case 'between': where.push(`${c} BETWEEN ${esc(f.value[0])} AND ${esc(f.value[1])}`); break;\n    case 'in': where.push(`${c} IN (${f.value.map(esc).join(', ')})`); break;\n    case 'contains_any': where.push('(' + f.value.map(v => `FIND_IN_SET(${esc(v)}, ${c})`).join(' OR ') + ')'); break;\n  }\n}\nlet sql;\nlet outputColumns;\nif (plan.intent === 'count') {\n  outputColumns = ['total'];\n  sql = `SELECT COUNT(*) AS total FROM ${qi(schema.table)}`;\n} else if (plan.intent === 'aggregate') {\n  outputColumns = [...groupBy,'total'];\n  sql = `SELECT ${groupBy.map(qi).join(', ')}, COUNT(*) AS total FROM ${qi(schema.table)}`;\n} else {\n  outputColumns = columns.length ? columns : schema.columns.slice(0,6).map(c => c.name);\n  sql = `SELECT ${outputColumns.map(qi).join(', ')} FROM ${qi(schema.table)}`;\n}\nif (where.length) sql += ' WHERE ' + where.join(' AND ');\nif (plan.intent === 'aggregate') {\n  sql += ' GROUP BY ' + groupBy.map(qi).join(', ');\n  sql += ' ORDER BY total DESC';\n  sql += ' LIMIT 100';\n} else if (plan.intent === 'list') {\n  if (orderBy.length) sql += ' ORDER BY ' + orderBy.map(o => `${qi(o.column)} ${String(o.direction).toUpperCase()}`).join(', ');\n  sql += ` LIMIT ${Math.min(Math.max(Number(plan.limit) || 250,1),250)}`;\n}\nreturn [{json:{valid:true,sql,question:source.question,asked_by:source.asked_by,dataset:schema.table,dataset_label:schema.label,intent:plan.intent,columns:outputColumns,explanation:String(plan.explanation || ''),confidence:['high','medium','low'].includes(plan.confidence) ? plan.confidence : 'low'}}];"
+        "jsCode": "const source = $('Prepare Dynamic Schema').first().json;\nconst item = $input.first().json;\nconst raw = item.text ?? item.output ?? item.message?.content ?? item.choices?.[0]?.message?.content ?? '';\nconst notes = [];\n\n// --- parse: tolerate code fences and prose wrapped around the JSON object\nlet plan;\ntry {\n  let s = String(raw).trim();\n  const fenced = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fenced) s = fenced[1].trim();\n  if (!s.startsWith('{')) {\n    const a = s.indexOf('{'), b = s.lastIndexOf('}');\n    if (a !== -1 && b > a) s = s.slice(a, b + 1);\n  }\n  plan = JSON.parse(s);\n} catch { return [{json:{valid:false,statusCode:502,error:'The AI returned invalid JSON'}}]; }\nif (!plan || typeof plan !== 'object') return [{json:{valid:false,statusCode:502,error:'The AI returned invalid JSON'}}];\nif (plan.answerable === false) return [{json:{valid:false,no_query:true,statusCode:422,error:String(plan.explanation || 'This question cannot be answered from the searchable datasets.')}}];\n\nconst norm = v => String(v ?? '').trim().toLowerCase();\n\n// --- table: accept the table name or the display label\nconst schema = source.schemas.find(s => norm(s.table) === norm(plan.table))\n            ?? source.schemas.find(s => norm(s.label) === norm(plan.table));\nif (!schema) return [{json:{valid:false,statusCode:422,error:'The AI selected an unavailable dataset'}}];\n\n// --- columns: accept the column name or its display label, case-insensitively\nconst byKey = new Map();\nfor (const c of schema.columns) {\n  byKey.set(norm(c.name), c.name);\n  if (!byKey.has(norm(c.label))) byKey.set(norm(c.label), c.name);\n}\nconst meta = new Map(schema.columns.map(c => [c.name, c]));\nconst resolve = v => byKey.get(norm(v)) ?? null;\n\nconst intents = new Set(['list','count','aggregate']);\nconst operators = new Set(['equals','not_equals','contains','contains_any','starts_with','ends_with','is_empty','is_not_empty','greater_than','greater_or_equal','less_than','less_or_equal','between','in']);\nconst NUMERIC_OPS = new Set(['greater_than','greater_or_equal','less_than','less_or_equal','between']);\nif (!intents.has(plan.intent)) return [{json:{valid:false,statusCode:422,error:'The AI selected an invalid query intent'}}];\n\n// --- select columns\nconst columns = [];\nfor (const c of (Array.isArray(plan.columns) ? plan.columns : [])) {\n  const r = resolve(c);\n  if (!r) { notes.push(`Ignored unknown output column ${c}`); continue; }\n  if (!columns.includes(r)) columns.push(r);\n}\n\n// --- group_by: a bad grouping changes the meaning of the answer, so reject it\nconst groupBy = [];\nfor (const g of (Array.isArray(plan.group_by) ? plan.group_by : [])) {\n  const r = resolve(g);\n  if (!r) return [{json:{valid:false,statusCode:422,error:`Unknown column selected: ${g}`}}];\n  if (!groupBy.includes(r)) groupBy.push(r);\n}\nif (plan.intent === 'aggregate' && !groupBy.length) return [{json:{valid:false,statusCode:422,error:'An aggregate query requires group_by'}}];\nif (groupBy.length > 3) return [{json:{valid:false,statusCode:422,error:'At most 3 group_by columns are supported'}}];\n\n// --- order_by: cosmetic, so normalise shapes and drop what cannot be sorted\nconst orderBy = [];\nfor (const o of (Array.isArray(plan.order_by) ? plan.order_by : [])) {\n  let col, dir;\n  if (typeof o === 'string') { col = o; dir = 'asc'; }\n  else if (o && typeof o === 'object' && o.column) { col = o.column; dir = String(o.direction ?? 'asc').toLowerCase(); }\n  else if (o && typeof o === 'object') { const k = Object.keys(o)[0]; if (!k) continue; col = k; dir = String(o[k] ?? 'asc').toLowerCase(); }\n  else continue;\n  if (!['asc','desc'].includes(dir)) dir = 'asc';\n  const r = resolve(col);\n  if (!r) { notes.push(`Ignored sort on ${col}, which is not a column of ${schema.table}`); continue; }\n  if (!orderBy.some(x => x.column === r)) orderBy.push({ column: r, direction: dir });\n}\n\n// --- filters\nconst filters = (Array.isArray(plan.filters) ? plan.filters : []).slice(0, 8);\nconst clean = [];\nfor (const f of filters) {\n  if (!f || typeof f !== 'object') continue;\n  const col = resolve(f.column);\n  if (!col) return [{json:{valid:false,statusCode:422,error:`Unknown filter column: ${f.column}`}}];\n  const op = String(f.operator ?? '').toLowerCase();\n  if (!operators.has(op)) return [{json:{valid:false,statusCode:422,error:`Invalid filter operator: ${op || f.operator}`}}];\n  let value = f.value;\n\n  if (op === 'between') {\n    if (!Array.isArray(value) || value.length !== 2) return [{json:{valid:false,statusCode:422,error:'Between requires exactly two values'}}];\n  } else if (op === 'in' || op === 'contains_any') {\n    if (!Array.isArray(value)) value = [value];\n    value = value.filter(v => v !== null && v !== undefined && String(v).trim() !== '');\n    if (!value.length || value.length > 50) return [{json:{valid:false,statusCode:422,error:`${op} requires an array of 1-50 values`}}];\n  } else if (op !== 'is_empty' && op !== 'is_not_empty') {\n    if (value === null || value === undefined || String(value).trim() === '') { notes.push(`Dropped empty filter on ${col}`); continue; }\n  }\n  if (NUMERIC_OPS.has(op) && !meta.get(col).numeric) {\n    notes.push(`Dropped ${op} on ${col}, which is not numeric`);\n    continue;\n  }\n  clean.push({ column: col, operator: op, value });\n}\n\n// --- SQL\nconst qi = n => '`' + n + '`';\nconst esc = v => {\n  if (v === null || v === undefined) return 'NULL';\n  if (typeof v === 'number' && Number.isFinite(v)) return String(v);\n  if (typeof v === 'boolean') return v ? '1' : '0';\n  return \"'\" + String(v).replace(/\\\\/g,'\\\\\\\\').replace(/'/g,\"''\").replace(/\\u0000/g,'') + \"'\";\n};\nconst like = v => String(v).replace(/[\\\\%_]/g, '\\\\$&');\nconst num = v => {\n  const n = Number(String(v).replace(/[,\\s$]/g, ''));\n  return Number.isFinite(n) ? String(n) : null;\n};\n// A numeric column declared TEXT sorts and compares as a string (\"999\" > \"2020\"),\n// so cast it. Columns already declared INT/BIGINT are used as-is.\nconst numExpr = n => meta.get(n).declared_numeric ? qi(n) : `CAST(NULLIF(${qi(n)}, '') AS SIGNED)`;\n\nconst where = [];\nfor (const f of clean) {\n  const c = qi(f.column);\n  switch (f.operator) {\n    case 'equals': where.push(`${c} = ${esc(f.value)}`); break;\n    case 'not_equals': where.push(`${c} <> ${esc(f.value)}`); break;\n    case 'contains': where.push(`LOWER(${c}) LIKE LOWER(${esc('%' + like(f.value) + '%')})`); break;\n    case 'starts_with': where.push(`LOWER(${c}) LIKE LOWER(${esc(like(f.value) + '%')})`); break;\n    case 'ends_with': where.push(`LOWER(${c}) LIKE LOWER(${esc('%' + like(f.value))})`); break;\n    case 'is_empty': where.push(`(${c} IS NULL OR ${c} = '')`); break;\n    case 'is_not_empty': where.push(`(${c} IS NOT NULL AND ${c} <> '')`); break;\n    case 'in': where.push(`${c} IN (${f.value.map(esc).join(', ')})`); break;\n    case 'greater_than': case 'greater_or_equal': case 'less_than': case 'less_or_equal': {\n      const n = num(f.value);\n      if (n === null) { notes.push(`Dropped ${f.operator} on ${f.column}, value was not a number`); break; }\n      const sym = {greater_than:'>',greater_or_equal:'>=',less_than:'<',less_or_equal:'<='}[f.operator];\n      where.push(`${numExpr(f.column)} ${sym} ${n}`);\n      break;\n    }\n    case 'between': {\n      const lo = num(f.value[0]), hi = num(f.value[1]);\n      if (lo === null || hi === null) { notes.push(`Dropped between on ${f.column}, values were not numbers`); break; }\n      where.push(`${numExpr(f.column)} BETWEEN ${Math.min(lo,hi)} AND ${Math.max(lo,hi)}`);\n      break;\n    }\n    case 'contains_any': {\n      if (meta.get(f.column).multi) {\n        // FIND_IN_SET needs strict \"a,b,c\" with no padding, but real values look\n        // like \"Travel, Tourism\". Normalise both sides and match on delimiters.\n        const listExpr = `CONCAT(',', REPLACE(LOWER(${c}), ' ', ''), ',')`;\n        where.push('(' + f.value.map(v => `${listExpr} LIKE ${esc('%,' + like(String(v).toLowerCase().replace(/ /g,'')) + ',%')}`).join(' OR ') + ')');\n      } else {\n        // On an ordinary text column, OR of substring matches. This is what lets\n        // one filter cover UK / United Kingdom / England.\n        where.push('(' + f.value.map(v => `LOWER(${c}) LIKE LOWER(${esc('%' + like(v) + '%')})`).join(' OR ') + ')');\n      }\n      break;\n    }\n  }\n}\n\nlet sql, outputColumns;\nif (plan.intent === 'count') {\n  outputColumns = ['total'];\n  sql = `SELECT COUNT(*) AS total FROM ${qi(schema.table)}`;\n} else if (plan.intent === 'aggregate') {\n  outputColumns = [...groupBy,'total'];\n  sql = `SELECT ${groupBy.map(qi).join(', ')}, COUNT(*) AS total FROM ${qi(schema.table)}`;\n} else {\n  outputColumns = columns.length ? columns.slice(0,12) : schema.columns.slice(0,6).map(c => c.name);\n  // _row_id rides along outside outputColumns (which drives the visible\n  // column list) so the lead site can offer its \"flag this lead\" control\n  // on AI search results the same way it already does on the dataset\n  // browser, without the AI ever seeing or choosing this column itself.\n  sql = `SELECT ${['_row_id', ...outputColumns].map(qi).join(', ')} FROM ${qi(schema.table)}`;\n}\nif (where.length) sql += ' WHERE ' + where.join(' AND ');\nif (plan.intent === 'aggregate') {\n  sql += ' GROUP BY ' + groupBy.map(qi).join(', ') + ' ORDER BY total DESC LIMIT 100';\n} else if (plan.intent === 'list') {\n  const sortable = orderBy.filter(o => outputColumns.includes(o.column));\n  for (const o of orderBy) if (!sortable.includes(o)) notes.push(`Ignored sort on ${o.column}, which is not a selected column`);\n  if (sortable.length) sql += ' ORDER BY ' + sortable.map(o => `${meta.get(o.column).numeric ? numExpr(o.column) : qi(o.column)} ${o.direction.toUpperCase()}`).join(', ');\n  const cap = Number(source.max_rows) || 5000;\n  sql += ` LIMIT ${Math.min(Math.max(Number(plan.limit) || cap, 1), cap)}`;\n}\nif (schema.shard_siblings?.length) notes.push(`Searched ${schema.table} only; ${schema.shard_siblings.length} more dataset(s) share these columns.`);\n\nreturn [{json:{valid:true,sql,question:source.question,asked_by:source.asked_by,dataset:schema.table,dataset_label:schema.label,intent:plan.intent,columns:outputColumns,filters_applied:clean.length,notes,shard_siblings:schema.shard_siblings ?? [],explanation:String(plan.explanation || ''),confidence:['high','medium','low'].includes(plan.confidence) ? plan.confidence : 'low'}}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1040, -80],
-      "id": "2abf99e9-68e4-4e49-8af5-94039cbb477f",
+      "position": [
+        1440,
+        368
+      ],
+      "id": "a550a234-d9d9-4ab7-8acd-563a58440c0e",
       "name": "Validate Plan and Build SQL"
     },
     {
       "parameters": {
         "conditions": {
-          "options": {"caseSensitive": true,"leftValue": "","typeValidation": "strict","version": 2},
-          "conditions": [{"id": "050fe98f-ae4b-42e3-aac5-62e2e84d4fd4","leftValue": "={{ $json.valid }}","rightValue": true,"operator": {"type": "boolean","operation": "true","singleValue": true}}],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "050fe98f-ae4b-42e3-aac5-62e2e84d4fd4",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
           "combinator": "and"
         },
         "options": {}
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [1280, -80],
-      "id": "1d1705ed-d158-4102-b108-33487d1dd9aa",
+      "position": [
+        1680,
+        368
+      ],
+      "id": "6966b5d9-1c1f-4c22-a992-a27f8c6c62cf",
       "name": "Plan Valid?"
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ { success: false, error: $json.error, no_query: $json.no_query || false } }}",
-        "options": {"responseCode": "={{ $json.statusCode || 422 }}"}
+        "options": {
+          "responseCode": "={{ $json.statusCode || 422 }}"
+        }
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [1520, 160],
-      "id": "eb77b9b2-2255-43de-8f03-1dfe1df3e141",
+      "position": [
+        1920,
+        608
+      ],
+      "id": "d98e555a-3e52-4fe6-aa5f-3d94610c8308",
       "name": "Respond Plan Error"
     },
     {
-      "parameters": {"operation": "executeQuery","query": "{{ $json.sql }}","options": {}},
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
       "type": "n8n-nodes-base.mySql",
       "typeVersion": 2.5,
-      "position": [1520, -80],
-      "id": "92d9766c-c6b3-44cc-9049-86a5fce532cf",
+      "position": [
+        1920,
+        368
+      ],
+      "id": "609f4a2e-6f63-4146-baca-6019ee166c75",
       "name": "Execute Read-only Query",
       "retryOnFail": true,
       "alwaysOutputData": true,
-      "credentials": {"mySql": {"id": "sggdQzi9MtSutITE","name": "MySQL account"}},
+      "credentials": {
+        "mySql": {
+          "id": "sggdQzi9MtSutITE",
+          "name": "MySQL account"
+        }
+      },
       "onError": "continueErrorOutput"
     },
     {
       "parameters": {
-        "jsCode": "const plan = $('Validate Plan and Build SQL').first().json;\nconst rows = $input.all().map(i => i.json).filter(r => r && Object.keys(r).length && !r.error);\nreturn [{json:{success:true,question:plan.question,sql:plan.sql,explanation:plan.explanation,confidence:plan.confidence,intent:plan.intent,dataset:plan.dataset,dataset_label:plan.dataset_label,row_count:rows.length,found:rows.length > 0,message:rows.length ? null : 'No records matched that search.',data:rows}}];"
+        "jsCode": "const plan = $('Validate Plan and Build SQL').first().json;\nconst rows = $input.all().map(i => i.json).filter(r => r && Object.keys(r).length && !r.error);\nreturn [{json:{success:true,question:plan.question,sql:plan.sql,explanation:plan.explanation,confidence:plan.confidence,intent:plan.intent,dataset:plan.dataset,dataset_label:plan.dataset_label,notes:plan.notes ?? [],shard_siblings:plan.shard_siblings ?? [],filters_applied:plan.filters_applied ?? 0,row_count:rows.length,found:rows.length > 0,message:rows.length ? null : 'No records matched that search.',data:rows}}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1760, -160],
-      "id": "089c00ac-d9e7-4128-ae91-e379de13d564",
+      "position": [
+        2160,
+        288
+      ],
+      "id": "6183f656-3208-4386-b532-479da1090486",
       "name": "Build Success Response"
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ $json }}",
-        "options": {"responseCode": 200}
+        "options": {
+          "responseCode": 200
+        }
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [2000, -160],
-      "id": "14db6873-2ffb-4b22-9f91-b6b40b918dc2",
+      "position": [
+        2400,
+        288
+      ],
+      "id": "c568c2df-c65d-4ca6-9ab9-97db1784ade5",
       "name": "Respond Success"
     },
     {
@@ -157,39 +247,1322 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1760, 40],
-      "id": "302dd3a0-e55e-481b-9d36-fb80a919b670",
+      "position": [
+        2160,
+        496
+      ],
+      "id": "8bbe0c75-6a1b-493b-860a-4766b25a157e",
       "name": "Build Database Error"
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ $json }}",
-        "options": {"responseCode": 500}
+        "options": {
+          "responseCode": 500
+        }
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [2000, 40],
-      "id": "716c4e1a-49b5-4384-b29a-13cb4308929d",
+      "position": [
+        2400,
+        496
+      ],
+      "id": "643bc565-7d44-4f28-ab00-b420c382a8cd",
       "name": "Respond Database Error"
     }
   ],
   "connections": {
-    "Webhook": {"main": [[{"node": "Prepare Dynamic Schema","type": "main","index": 0}]]},
-    "Prepare Dynamic Schema": {"main": [[{"node": "Request Valid?","type": "main","index": 0}]]},
-    "Request Valid?": {"main": [[{"node": "Dynamic Query Planner","type": "main","index": 0}],[{"node": "Respond Request Error","type": "main","index": 0}]]},
-    "DeepSeek Chat Model": {"ai_languageModel": [[{"node": "Dynamic Query Planner","type": "ai_languageModel","index": 0}]]},
-    "Dynamic Query Planner": {"main": [[{"node": "Validate Plan and Build SQL","type": "main","index": 0}]]},
-    "Validate Plan and Build SQL": {"main": [[{"node": "Plan Valid?","type": "main","index": 0}]]},
-    "Plan Valid?": {"main": [[{"node": "Execute Read-only Query","type": "main","index": 0}],[{"node": "Respond Plan Error","type": "main","index": 0}]]},
-    "Execute Read-only Query": {"main": [[{"node": "Build Success Response","type": "main","index": 0}],[{"node": "Build Database Error","type": "main","index": 0}]]},
-    "Build Success Response": {"main": [[{"node": "Respond Success","type": "main","index": 0}]]},
-    "Build Database Error": {"main": [[{"node": "Respond Database Error","type": "main","index": 0}]]}
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Dynamic Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Dynamic Schema": {
+      "main": [
+        [
+          {
+            "node": "Request Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Valid?": {
+      "main": [
+        [
+          {
+            "node": "Dynamic Query Planner",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Request Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dynamic Query Planner": {
+      "main": [
+        [
+          {
+            "node": "Validate Plan and Build SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Dynamic Query Planner",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Plan and Build SQL": {
+      "main": [
+        [
+          {
+            "node": "Plan Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Valid?": {
+      "main": [
+        [
+          {
+            "node": "Execute Read-only Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Plan Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Read-only Query": {
+      "main": [
+        [
+          {
+            "node": "Build Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Database Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Success Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Database Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Database Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "pinData": {},
-  "settings": {"executionOrder": "v1"},
-  "active": false,
-  "versionId": "33323b89-11c4-4971-b90c-6810c0852682",
-  "meta": {"templateCredsSetupCompleted": true},
-  "tags": []
+  "pinData": {
+    "Webhook": [
+      {
+        "headers": {
+          "host": "127.0.0.1:5678",
+          "accept": "*/*",
+          "content-type": "application/json",
+          "x-forwarded-for": "213.136.64.26",
+          "x-forwarded-host": "n8n.moveneticsdigital.com",
+          "x-forwarded-server": "n8n.moveneticsdigital.com",
+          "content-length": "15227",
+          "connection": "close"
+        },
+        "params": {},
+        "query": {},
+        "body": {
+          "request_id": "e4674a66ac583a433e5d499c82afaf34",
+          "question": "Travel startup comapnies across UK",
+          "schemas": [
+            {
+              "table": "ds_crunchbase_2a",
+              "label": "Crunchbase_2a",
+              "description": "Admin-uploaded dataset named \"Crunchbase_2a\". Use only its declared columns and do not assume relationships to other datasets.",
+              "row_count": 807488,
+              "columns": [
+                {
+                  "name": "company",
+                  "label": "Company",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "primary_category",
+                  "label": "Primary Category",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "categories",
+                  "label": "Categories",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "size_band",
+                  "label": "Size Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_band",
+                  "label": "Funding Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_total_usd",
+                  "label": "Funding Total USD",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_rounds",
+                  "label": "Funding Rounds",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "founded",
+                  "label": "Founded",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "geo_region",
+                  "label": "Geo Region",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "metro_first_tag",
+                  "label": "Metro/First Tag",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "region_tags_raw",
+                  "label": "Region Tags (raw)",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "email",
+                  "label": "Email",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "phone",
+                  "label": "Phone",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "website",
+                  "label": "Website",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "linkedin",
+                  "label": "LinkedIn",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "growth",
+                  "label": "Growth",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "ipo_status",
+                  "label": "IPO Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "status",
+                  "label": "Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "cb_url",
+                  "label": "CB URL",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                }
+              ]
+            },
+            {
+              "table": "ds_crunchbase_2b",
+              "label": "Crunchbase_2b",
+              "description": "Admin-uploaded dataset named \"Crunchbase_2b\". Use only its declared columns and do not assume relationships to other datasets.",
+              "row_count": 999999,
+              "columns": [
+                {
+                  "name": "company",
+                  "label": "Company",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "primary_category",
+                  "label": "Primary Category",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "categories",
+                  "label": "Categories",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "size_band",
+                  "label": "Size Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_band",
+                  "label": "Funding Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_total_usd",
+                  "label": "Funding Total USD",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_rounds",
+                  "label": "Funding Rounds",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "founded",
+                  "label": "Founded",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "geo_region",
+                  "label": "Geo Region",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "metro_first_tag",
+                  "label": "Metro/First Tag",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "region_tags_raw",
+                  "label": "Region Tags (raw)",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "email",
+                  "label": "Email",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "phone",
+                  "label": "Phone",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "website",
+                  "label": "Website",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "linkedin",
+                  "label": "LinkedIn",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "growth",
+                  "label": "Growth",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "ipo_status",
+                  "label": "IPO Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "status",
+                  "label": "Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "cb_url",
+                  "label": "CB URL",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                }
+              ]
+            },
+            {
+              "table": "ds_crunchbase_2c_data",
+              "label": "Crunchbase_2c",
+              "description": "Admin-uploaded dataset named \"Crunchbase_2c\". Use only its declared columns and do not assume relationships to other datasets.",
+              "row_count": 975685,
+              "columns": [
+                {
+                  "name": "company",
+                  "label": "Company",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "primary_category",
+                  "label": "Primary Category",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "categories",
+                  "label": "Categories",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "size_band",
+                  "label": "Size Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_band",
+                  "label": "Funding Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_total_usd",
+                  "label": "Funding Total USD",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_rounds",
+                  "label": "Funding Rounds",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "founded",
+                  "label": "Founded",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "geo_region",
+                  "label": "Geo Region",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "metro_first_tag",
+                  "label": "Metro/First Tag",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "region_tags_raw",
+                  "label": "Region Tags (raw)",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "email",
+                  "label": "Email",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "phone",
+                  "label": "Phone",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "website",
+                  "label": "Website",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "linkedin",
+                  "label": "LinkedIn",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "growth",
+                  "label": "Growth",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "ipo_status",
+                  "label": "IPO Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "status",
+                  "label": "Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "cb_url",
+                  "label": "CB URL",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                }
+              ]
+            },
+            {
+              "table": "ds_crunchbase_2d",
+              "label": "Crunchbase_2d",
+              "description": "Admin-uploaded dataset named \"Crunchbase_2d\". Use only its declared columns and do not assume relationships to other datasets.",
+              "row_count": 1000000,
+              "columns": [
+                {
+                  "name": "company",
+                  "label": "Company",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "primary_category",
+                  "label": "Primary Category",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "categories",
+                  "label": "Categories",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "size_band",
+                  "label": "Size Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_band",
+                  "label": "Funding Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_total_usd",
+                  "label": "Funding Total USD",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_rounds",
+                  "label": "Funding Rounds",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "founded",
+                  "label": "Founded",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "geo_region",
+                  "label": "Geo Region",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "metro_first_tag",
+                  "label": "Metro/First Tag",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "region_tags_raw",
+                  "label": "Region Tags (raw)",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "email",
+                  "label": "Email",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "phone",
+                  "label": "Phone",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "website",
+                  "label": "Website",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "linkedin",
+                  "label": "LinkedIn",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "growth",
+                  "label": "Growth",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "ipo_status",
+                  "label": "IPO Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "status",
+                  "label": "Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "cb_url",
+                  "label": "CB URL",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                }
+              ]
+            },
+            {
+              "table": "ds_crunchbase_2e",
+              "label": "Crunchbase_2e",
+              "description": "Admin-uploaded dataset named \"Crunchbase_2e\". Use only its declared columns and do not assume relationships to other datasets.",
+              "row_count": 999995,
+              "columns": [
+                {
+                  "name": "company",
+                  "label": "Company",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "primary_category",
+                  "label": "Primary Category",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "categories",
+                  "label": "Categories",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "size_band",
+                  "label": "Size Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_band",
+                  "label": "Funding Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_total_usd",
+                  "label": "Funding Total USD",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_rounds",
+                  "label": "Funding Rounds",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "founded",
+                  "label": "Founded",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "geo_region",
+                  "label": "Geo Region",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "metro_first_tag",
+                  "label": "Metro/First Tag",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "region_tags_raw",
+                  "label": "Region Tags (raw)",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "email",
+                  "label": "Email",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "phone",
+                  "label": "Phone",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "website",
+                  "label": "Website",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "linkedin",
+                  "label": "LinkedIn",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "growth",
+                  "label": "Growth",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "ipo_status",
+                  "label": "IPO Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "status",
+                  "label": "Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "cb_url",
+                  "label": "CB URL",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                }
+              ]
+            },
+            {
+              "table": "ds_crunchbase_2f",
+              "label": "Crunchbase_2f",
+              "description": "Admin-uploaded dataset named \"Crunchbase_2f\". Use only its declared columns and do not assume relationships to other datasets.",
+              "row_count": 975682,
+              "columns": [
+                {
+                  "name": "company",
+                  "label": "Company",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "primary_category",
+                  "label": "Primary Category",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "categories",
+                  "label": "Categories",
+                  "type": "VARCHAR(512)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "size_band",
+                  "label": "Size Band",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_band",
+                  "label": "Funding Band",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_total_usd",
+                  "label": "Funding Total USD",
+                  "type": "BIGINT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_rounds",
+                  "label": "Funding Rounds",
+                  "type": "BIGINT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "founded",
+                  "label": "Founded",
+                  "type": "BIGINT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "geo_region",
+                  "label": "Geo Region",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "metro_first_tag",
+                  "label": "Metro/First Tag",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "region_tags_raw",
+                  "label": "Region Tags (raw)",
+                  "type": "VARCHAR(512)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "email",
+                  "label": "Email",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "phone",
+                  "label": "Phone",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "website",
+                  "label": "Website",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "linkedin",
+                  "label": "LinkedIn",
+                  "type": "VARCHAR(512)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "growth",
+                  "label": "Growth",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "ipo_status",
+                  "label": "IPO Status",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "status",
+                  "label": "Status",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "cb_url",
+                  "label": "CB URL",
+                  "type": "VARCHAR(255)",
+                  "description": "",
+                  "values": []
+                }
+              ]
+            },
+            {
+              "table": "ds_crunchbase_2g",
+              "label": "Crunchbase_2g",
+              "description": "Admin-uploaded dataset named \"Crunchbase_2g\". Use only its declared columns and do not assume relationships to other datasets.",
+              "row_count": 807488,
+              "columns": [
+                {
+                  "name": "company",
+                  "label": "Company",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "primary_category",
+                  "label": "Primary Category",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "categories",
+                  "label": "Categories",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "size_band",
+                  "label": "Size Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_band",
+                  "label": "Funding Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_total_usd",
+                  "label": "Funding Total USD",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_rounds",
+                  "label": "Funding Rounds",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "founded",
+                  "label": "Founded",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "geo_region",
+                  "label": "Geo Region",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "metro_first_tag",
+                  "label": "Metro/First Tag",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "region_tags_raw",
+                  "label": "Region Tags (raw)",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "email",
+                  "label": "Email",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "phone",
+                  "label": "Phone",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "website",
+                  "label": "Website",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "linkedin",
+                  "label": "LinkedIn",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "growth",
+                  "label": "Growth",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "ipo_status",
+                  "label": "IPO Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "status",
+                  "label": "Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "cb_url",
+                  "label": "CB URL",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                }
+              ]
+            },
+            {
+              "table": "ds_crunchbase_active_withemail_part2_of_2",
+              "label": "Crunchbase_Active_WithEmail_Part2_of_2",
+              "description": "Admin-uploaded dataset named \"Crunchbase_Active_WithEmail_Part2_of_2\". Use only its declared columns and do not assume relationships to other datasets.",
+              "row_count": 975685,
+              "columns": [
+                {
+                  "name": "company",
+                  "label": "Company",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "primary_category",
+                  "label": "Primary Category",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "categories",
+                  "label": "Categories",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "size_band",
+                  "label": "Size Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_band",
+                  "label": "Funding Band",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_total_usd",
+                  "label": "Funding Total USD",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "funding_rounds",
+                  "label": "Funding Rounds",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "founded",
+                  "label": "Founded",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "geo_region",
+                  "label": "Geo Region",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "metro_first_tag",
+                  "label": "Metro/First Tag",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "region_tags_raw",
+                  "label": "Region Tags (raw)",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "email",
+                  "label": "Email",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "phone",
+                  "label": "Phone",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "website",
+                  "label": "Website",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "linkedin",
+                  "label": "LinkedIn",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "growth",
+                  "label": "Growth",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "ipo_status",
+                  "label": "IPO Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "status",
+                  "label": "Status",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                },
+                {
+                  "name": "cb_url",
+                  "label": "CB URL",
+                  "type": "TEXT",
+                  "description": "",
+                  "values": []
+                }
+              ]
+            }
+          ],
+          "asked_by": "sakshi.yadav@moveneticsdigital.com",
+          "max_rows": 250
+        },
+        "webhookUrl": "https://n8n.moveneticsdigital.com/webhook/lead-search-v2",
+        "executionMode": "production"
+      }
+    ]
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3448845e12128e24ad352d2617e0cdfac1ef73e4425d84fac746176c64877bca"
+  }
 }

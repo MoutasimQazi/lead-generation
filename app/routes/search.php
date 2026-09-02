@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../lib/audit.php';
+require_once __DIR__ . '/datasets.php';
 
 /**
  * Proxies a natural-language question to n8n.
@@ -143,6 +144,10 @@ function searchable_schemas(array $user): array
     return $schemas;
 }
 
+/** The absolute ceiling regardless of what the browser asks for. */
+const SEARCH_MAX_ROWS_CEILING = 5000;
+const SEARCH_MAX_ROWS_DEFAULT = 250;
+
 function route_search(): never
 {
     $user = require_auth();
@@ -153,6 +158,9 @@ function route_search(): never
     if ($question === '') {
         fail('Type what you are looking for first.', 422);
     }
+
+    $maxRows = body_int('max_rows') ?? SEARCH_MAX_ROWS_DEFAULT;
+    $maxRows = max(1, min(SEARCH_MAX_ROWS_CEILING, $maxRows));
 
     $url = config('n8n_url');
 
@@ -177,7 +185,7 @@ function route_search(): never
         'question'   => $question,
         'schemas'    => $schemas,
         'asked_by'   => $user['email'],
-        'max_rows'   => 250,
+        'max_rows'   => $maxRows,
     ], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
 
     $headers = ['Content-Type: application/json'];
@@ -228,6 +236,26 @@ function route_search(): never
     $rows = is_array($decoded) && array_is_list($decoded)
         ? $decoded
         : (is_array($decoded) ? ($decoded['data'] ?? []) : []);
+
+    // Lets the results table offer the same "flag this lead" control dataset.html
+    // has, when the AI query was a plain list against one known table with a
+    // row identifier — never for count/aggregate results, which have none.
+    if (
+        is_array($decoded)
+        && ($decoded['intent'] ?? null) === 'list'
+        && is_string($decoded['dataset'] ?? null)
+        && is_array($rows) && $rows !== []
+        && array_key_exists('_row_id', $rows[0])
+    ) {
+        $dataset = db_one('SELECT id FROM datasets WHERE table_name = ?', [$decoded['dataset']]);
+
+        if ($dataset) {
+            $datasetId = (int) $dataset['id'];
+            attach_row_flags($datasetId, $rows);
+            $decoded['data'] = $rows;
+            $decoded['dataset_id'] = $datasetId;
+        }
+    }
 
     audit('search', $user, null, [
         'request_id' => $requestId,

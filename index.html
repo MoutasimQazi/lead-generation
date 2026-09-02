@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=20260901-5">
+<link rel="stylesheet" href="styles.css?v=20260902-1">
 </head>
 <body>
 <div class="wrap">
@@ -27,14 +27,27 @@
     <button class="go" id="go">Search</button>
   </div>
 
+  <div class="ask-opts">
+    <label for="maxRows">Max results</label>
+    <select id="maxRows">
+      <option value="50">50</option>
+      <option value="100">100</option>
+      <option value="250" selected>250</option>
+      <option value="500">500</option>
+      <option value="1000">1,000</option>
+      <option value="2500">2,500</option>
+      <option value="5000">5,000</option>
+    </select>
+  </div>
+
   <div class="chips" id="chips"></div>
 
   <div class="status" id="status"></div>
 
 </div>
 
-<script src="app.js?v=20260901-3"></script>
-<script src="index.js?v=20260901-2"></script>
+<script src="app.js?v=20260902-1"></script>
+<script src="index.js?v=20260902-1"></script>
 <script type="application/json">
 /* ── config ─────────────────────────────────────────────────────────────
    No webhook URL and no API key live here any more. The browser calls

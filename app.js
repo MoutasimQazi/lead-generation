@@ -281,6 +281,51 @@ function renderNav(active) {
   });
 }
 
+/* ── lead status flags ─────────────────────────────────────────────────
+   Shared between dataset.js (the row browser) and index.js (AI search
+   results, when the query resolved to one table with a row id) so both
+   render and patch flags the same way. */
+
+const FLAG_LABELS = { contacted: 'Contacted', unreachable: 'Unable to contact', won: 'Won', lost: 'Lost' };
+
+function flagLegend() {
+  return '<div class="flag-legend"><span>Lead status:</span>' +
+    Object.keys(FLAG_LABELS).map(status =>
+      '<span><i class="' + status + '"></i>' + FLAG_LABELS[status] + '</span>').join('') +
+    '</div>';
+}
+
+function flagDateTime(raw) {
+  if (!raw) return '';
+  const d = new Date(String(raw).replace(' ', 'T'));
+  if (isNaN(d)) return esc(raw);
+  return esc(d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })) +
+    ' at ' + esc(d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }));
+}
+
+function flagCellHtml(rowId, flag) {
+  const status = flag ? flag.status : '';
+  const options = ['<option value="">No status</option>'].concat(
+    Object.keys(FLAG_LABELS).map(key =>
+      '<option value="' + key + '"' + (status === key ? ' selected' : '') + '>' + FLAG_LABELS[key] + '</option>'));
+
+  return '<td class="flagcell">' +
+    '<select class="flag-select' + (status ? ' ' + status : ' none') + '" data-flag-row="' + rowId + '">' +
+      options.join('') +
+    '</select>' +
+    (flag
+      ? '<span class="flag-meta" title="' + esc(flag.set_by || 'Unknown') + '">' +
+          'by ' + esc(flag.set_by || 'Unknown') + ' · ' + flagDateTime(flag.set_at) +
+        '</span>'
+      : '') +
+  '</td>';
+}
+
+/** Sets or clears (status = '' or null) one row's flag. */
+function patchRowFlag(datasetId, rowId, status) {
+  return apiPatch('api/datasets/' + datasetId + '/rows/' + rowId + '/flag', { status: status || null });
+}
+
 /* ── small UI helpers ─────────────────────────────────────────────────── */
 
 let toastTimer = null;

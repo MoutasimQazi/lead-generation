@@ -3,8 +3,6 @@ let ds = null;
 let columns = [];
 let page = 1;
 let per = 50;
-let rowCursors = [0];
-let cursorIndex = 0;
 let term = '';
 let sort = '';
 let dir = 'asc';
@@ -253,7 +251,7 @@ async function loadRows() {
 
   $('status').innerHTML = '<div class="loading"><span class="pulse"></span>Loading rows...</div>';
   const params = new URLSearchParams({
-    page, per, after: rowCursors[cursorIndex] || 0, q: term, sort, dir,
+    page, per, q: term, sort, dir,
     filters: JSON.stringify(filters),
   });
 
@@ -314,7 +312,6 @@ function renderRows(data) {
     if (sort === column) dir = dir === 'asc' ? 'desc' : 'asc';
     else { sort = column; dir = 'asc'; }
     page = 1;
-    rowCursors = [0]; cursorIndex = 0;
     loadRows();
   }));
 
@@ -326,49 +323,19 @@ function renderRows(data) {
       if (value) filters[column] = value;
       else delete filters[column];
       page = 1;
-      rowCursors = [0]; cursorIndex = 0;
       loadRows();
     }, 300);
   }));
 
-  $$('[data-flag-select]').forEach(select => select.addEventListener('change', event => {
-    setRowFlag(Number(event.target.dataset.flagSelect), event.target.value);
+  $$('[data-flag-row]').forEach(select => select.addEventListener('change', event => {
+    setRowFlag(Number(event.target.dataset.flagRow), event.target.value);
   }));
-}
-
-const FLAG_LABELS = { contacted: 'Contacted', unreachable: 'Unable to contact', won: 'Won', lost: 'Lost' };
-
-function flagLegend() {
-  return '<div class="flag-legend">' +
-    '<span>Lead status:</span>' +
-    Object.keys(FLAG_LABELS).map(status =>
-      '<span><i class="' + status + '"></i>' + FLAG_LABELS[status] + '</span>').join('') +
-    '</div>';
-}
-
-function flagSelectHtml(row) {
-  const status = row.flag ? row.flag.status : '';
-  const options = ['<option value="">No status</option>'].concat(
-    Object.keys(FLAG_LABELS).map(key =>
-      '<option value="' + key + '"' + (status === key ? ' selected' : '') + '>' + FLAG_LABELS[key] + '</option>')
-  );
-
-  return '<td class="flagcell">' +
-    '<select class="flag-select' + (status ? ' ' + status : '') + '" data-flag-select="' + row._row_id + '">' +
-      options.join('') +
-    '</select>' +
-    (row.flag
-      ? '<span class="flag-meta" title="' + esc(row.flag.set_by || 'Unknown') + ' · ' + esc(row.flag.set_at) + '">' +
-          'by ' + esc(row.flag.set_by || 'Unknown') + ' · ' + esc(row.flag.set_at.slice(0, 16)) +
-        '</span>'
-      : '') +
-  '</td>';
 }
 
 function rowHtml(row) {
   const flagClass = row.flag ? ' flag-row-' + row.flag.status : '';
   return '<tr class="lead-row' + flagClass + '" data-row-id="' + row._row_id + '">' +
-    flagSelectHtml(row) +
+    flagCellHtml(row._row_id, row.flag) +
     columns.map(column => {
       const value = row[column.name];
       return '<td>' + (value === null || value === undefined || value === ''
@@ -378,12 +345,12 @@ function rowHtml(row) {
 }
 
 async function setRowFlag(rowId, status) {
-  const select = document.querySelector('[data-flag-select="' + rowId + '"]');
+  const select = document.querySelector('[data-flag-row="' + rowId + '"]');
   const tr = select ? select.closest('tr') : null;
 
   try {
     if (select) select.disabled = true;
-    const result = await apiPatch('api/datasets/' + id + '/rows/' + rowId + '/flag', { status: status || null });
+    const result = await patchRowFlag(id, rowId, status);
 
     if (currentRows) {
       const row = currentRows.rows.find(r => Number(r._row_id) === rowId);
@@ -393,10 +360,10 @@ async function setRowFlag(rowId, status) {
     if (tr) {
       tr.className = 'lead-row' + (result.flag ? ' flag-row-' + result.flag.status : '');
       const cell = tr.querySelector('.flagcell');
-      if (cell) cell.outerHTML = flagSelectHtml({ _row_id: rowId, flag: result.flag });
-      const newSelect = tr.querySelector('[data-flag-select]');
+      if (cell) cell.outerHTML = flagCellHtml(rowId, result.flag);
+      const newSelect = tr.querySelector('[data-flag-row]');
       if (newSelect) newSelect.addEventListener('change', event =>
-        setRowFlag(Number(event.target.dataset.flagSelect), event.target.value));
+        setRowFlag(Number(event.target.dataset.flagRow), event.target.value));
     }
 
     toast(status ? 'Marked as ' + FLAG_LABELS[status].toLowerCase() + '.' : 'Status cleared.');
@@ -408,27 +375,53 @@ async function setRowFlag(rowId, status) {
   }
 }
 
+/** Which page-number buttons to show: all of them under 8 pages, otherwise
+ *  first, last, and a window around the current page, with gaps elided. */
+function pageButtons(cur, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const keep = new Set([1, 2, total - 1, total, cur - 1, cur, cur + 1]);
+  const nums = [...keep].filter(n => n >= 1 && n <= total).sort((a, b) => a - b);
+
+  const out = [];
+  let prev = 0;
+  for (const n of nums) {
+    if (prev && n - prev > 1) out.push('…');
+    out.push(n);
+    prev = n;
+  }
+  return out;
+}
+
 function renderPager(data) {
+  const pages = data.pages;
+
   $('pager').innerHTML =
     '<span class="range mono">' + fmt((data.page - 1) * data.per + 1) + '–' +
       fmt(Math.min(data.page * data.per, data.total)) + ' of ' + fmt(data.total) + '</span>' +
     '<span class="spacer"></span>' +
-    '<button class="pg" id="prev"' + ((data.cursor_mode ? cursorIndex <= 0 : data.page <= 1) ? ' disabled' : '') + '>Previous</button>' +
-    '<span class="range mono">Page ' + (data.cursor_mode ? cursorIndex + 1 : data.page) + '</span>' +
-    '<button class="pg" id="next"' + (!data.has_more ? ' disabled' : '') + '>Next</button>';
+    '<div class="pagenums">' +
+      '<button class="pg" id="prev"' + (data.page <= 1 ? ' disabled' : '') + '>Previous</button>' +
+      pageButtons(data.page, pages).map(p => p === '…'
+        ? '<span class="pg-ellipsis">…</span>'
+        : '<button class="pg pg-num' + (p === data.page ? ' active' : '') + '" data-page="' + p + '"' +
+            (p === data.page ? ' disabled' : '') + '>' + p + '</button>'
+      ).join('') +
+      '<button class="pg" id="next"' + (data.page >= pages ? ' disabled' : '') + '>Next</button>' +
+    '</div>';
 
-  $('prev').addEventListener('click', () => {
-    if (data.cursor_mode && cursorIndex > 0) { cursorIndex--; page = cursorIndex + 1; loadRows(); }
-    else if (!data.cursor_mode && page > 1) { page--; loadRows(); }
-  });
-  $('next').addEventListener('click', () => {
-    if (data.cursor_mode && data.has_more && data.next_cursor) {
-      rowCursors[cursorIndex + 1] = data.next_cursor;
-      cursorIndex++;
-      page = cursorIndex + 1;
-      loadRows();
-    } else if (!data.cursor_mode && data.has_more) { page++; loadRows(); }
-  });
+  $('prev').addEventListener('click', () => { if (page > 1) { page--; loadRows(); scrollTop(); } });
+  $('next').addEventListener('click', () => { if (page < pages) { page++; loadRows(); scrollTop(); } });
+  $$('[data-page]').forEach(button => button.addEventListener('click', () => {
+    page = Number(button.dataset.page);
+    loadRows();
+    scrollTop();
+  }));
+}
+
+function scrollTop() {
+  const card = document.querySelector('.tablecard');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 $('q').addEventListener('input', event => {
@@ -436,7 +429,6 @@ $('q').addEventListener('input', event => {
   window.datasetSearchTimer = setTimeout(() => {
     term = event.target.value.trim();
     page = 1;
-    rowCursors = [0]; cursorIndex = 0;
     loadRows();
   }, 300);
 });

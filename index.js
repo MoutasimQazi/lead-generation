@@ -7,8 +7,8 @@ const EXAMPLES = [
   'Owners at Flintco'
 ];
 
-const qEl = $('q'), statusEl = $('status');
-let rows = [], cols = [], page = 0, busy = false, searchableRows = 0;
+const qEl = $('q'), statusEl = $('status'), maxRowsEl = $('maxRows');
+let rows = [], cols = [], page = 0, busy = false, searchableRows = 0, resultDatasetId = null;
 const PER_PAGE = 50;
 
 const LABELS = {
@@ -69,9 +69,10 @@ async function run(){
     (searchableRows ? ' ' + fmt(searchableRows) + ' records' : '') + '…</div>';
 
   let body;
+  const maxRows = Number(maxRowsEl.value) || 250;
 
   try {
-    body = await apiPost('api/search', { question });
+    body = await apiPost('api/search', { question, max_rows: maxRows });
   } catch (err) {
     busy = false; $('go').disabled = false;
     return showError(statusEl, 'The search failed', esc(err.message));
@@ -80,7 +81,10 @@ async function run(){
   busy = false; $('go').disabled = false;
 
   rows = Array.isArray(body) ? body : (body.data || []);
-  cols = rows.length ? Object.keys(rows[0]) : [];
+  // _row_id and flag ride along on each row so a lead can be flagged from
+  // here, but they are bookkeeping, not something to show as a column.
+  cols = rows.length ? Object.keys(rows[0]).filter(c => c !== '_row_id' && c !== 'flag') : [];
+  resultDatasetId = (!Array.isArray(body) && body.dataset_id) || null;
   page = 0;
 
   render(body, Math.round(performance.now() - started));
@@ -106,8 +110,10 @@ function render(body, ms){
       '<button class="linkbtn" id="dl">Download CSV</button>' +
     '</div>' +
     (body.sql ? '<div class="sqlbox mono" id="sqlbox">' + esc(body.sql) + '</div>' : '') +
+    (resultDatasetId ? flagLegend() : '') +
     '<div class="tablecard"><div class="scroll"><table>' +
-      '<thead><tr>' + cols.map(c => '<th>' + esc(label(c)) + '</th>').join('') + '</tr></thead>' +
+      '<thead><tr>' + (resultDatasetId ? '<th>Status</th>' : '') +
+        cols.map(c => '<th>' + esc(label(c)) + '</th>').join('') + '</tr></thead>' +
       '<tbody id="tbody"></tbody>' +
     '</table></div><div class="pager" id="pager"></div></div>';
 
@@ -138,8 +144,17 @@ function paint(){
   const slice = rows.slice(start, start + PER_PAGE);
 
   $('tbody').innerHTML = slice.map(r =>
-    '<tr>' + cols.map(c => cell(c, r[c], r)).join('') + '</tr>'
+    '<tr class="' + (r.flag ? 'flag-row-' + r.flag.status : '') + '" data-row-id="' + (r._row_id ?? '') + '">' +
+      (resultDatasetId ? flagCellHtml(r._row_id, r.flag) : '') +
+      cols.map(c => cell(c, r[c], r)).join('') +
+    '</tr>'
   ).join('');
+
+  if (resultDatasetId) {
+    $$('[data-flag-row]').forEach(select => select.addEventListener('change', event => {
+      setSearchRowFlag(Number(event.target.dataset.flagRow), event.target.value);
+    }));
+  }
 
   const pages = Math.ceil(rows.length / PER_PAGE);
 
@@ -156,6 +171,35 @@ function paint(){
 
 function scrollTop(){
   document.querySelector('.tablecard').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+async function setSearchRowFlag(rowId, status){
+  const select = document.querySelector('[data-flag-row="' + rowId + '"]');
+  const tr = select ? select.closest('tr') : null;
+
+  try {
+    if (select) select.disabled = true;
+    const result = await patchRowFlag(resultDatasetId, rowId, status);
+
+    const row = rows.find(r => Number(r._row_id) === rowId);
+    if (row) row.flag = result.flag;
+
+    if (tr) {
+      tr.className = result.flag ? 'flag-row-' + result.flag.status : '';
+      const cellEl = tr.querySelector('.flagcell');
+      if (cellEl) cellEl.outerHTML = flagCellHtml(rowId, result.flag);
+      const newSelect = tr.querySelector('[data-flag-row]');
+      if (newSelect) newSelect.addEventListener('change', event =>
+        setSearchRowFlag(Number(event.target.dataset.flagRow), event.target.value));
+    }
+
+    toast(status ? 'Marked as ' + FLAG_LABELS[status].toLowerCase() + '.' : 'Status cleared.');
+  } catch (err) {
+    toast(err.message, true);
+    if (select) select.value = (rows.find(r => Number(r._row_id) === rowId) || {}).flag?.status || '';
+  } finally {
+    if (select && select.isConnected) select.disabled = false;
+  }
 }
 
 function cell(col, val, row){

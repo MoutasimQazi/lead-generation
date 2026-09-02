@@ -94,7 +94,7 @@ function h(string $s): string
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=20260901-5">
+<link rel="stylesheet" href="styles.css?v=20260902-1">
 </head>
 <body class="centered">
 <main class="authcard">
@@ -189,6 +189,6 @@ function h(string $s): string
 
 </main>
 
-<script src="app.js?v=20260901-3"></script>
+<script src="app.js?v=20260902-1"></script>
 </body>
 </html>

@@ -451,8 +451,6 @@ function route_rows_list(int $id): never
     // must be paged so the browser never downloads or renders the whole table.
     $per    = query_int('per', 50, 10, 50);
     $page   = query_int('page', 1, 1, 1000000);
-    $afterRaw = query_string('after', '0', 20);
-    $after = ctype_digit($afterRaw) ? (int) $afterRaw : 0;
     $search = query_string('q');
     $sort   = query_string('sort', '', 64);
     $dir    = strtolower(query_string('dir', 'asc', 4)) === 'desc' ? 'DESC' : 'ASC';
@@ -527,27 +525,15 @@ function route_rows_list(int $id): never
         ? (int) $d['row_count']
         : (int) db_value('SELECT COUNT(*) FROM ' . $table . $countWhere, $countParams, 0);
 
-    $useCursor = $search === '' && $filters === [] && $sort === '';
-    if ($useCursor && $after > 0) {
-        $where .= $where === '' ? ' WHERE ' : ' AND ';
-        $where .= qsys('_row_id') . ' > ?';
-        $params[] = $after;
-    }
-    $offset = $useCursor ? 0 : ($page - 1) * $per;
-    $fetchLimit = $per + 1;
+    $offset = ($page - 1) * $per;
 
     // $per and $offset are ints from query_int, so interpolating them is safe;
     // LIMIT does not accept bound parameters under real prepared statements.
     $rows = db_all(
         'SELECT ' . implode(', ', $select) . ' FROM ' . $table . $where
-        . ' ORDER BY ' . $orderBy . ' LIMIT ' . $fetchLimit . ' OFFSET ' . $offset,
+        . ' ORDER BY ' . $orderBy . ' LIMIT ' . $per . ' OFFSET ' . $offset,
         $params
     );
-    $hasMore = count($rows) > $per;
-    if ($hasMore) {
-        array_pop($rows);
-    }
-    $last = $rows === [] ? null : $rows[array_key_last($rows)];
 
     attach_row_flags($id, $rows);
 
@@ -558,9 +544,6 @@ function route_rows_list(int $id): never
         'page'    => $page,
         'per'     => $per,
         'pages'   => max(1, (int) ceil($total / $per)),
-        'has_more' => $hasMore,
-        'next_cursor' => $useCursor && $last ? (int) $last['_row_id'] : null,
-        'cursor_mode' => $useCursor,
     ]);
 }
 
