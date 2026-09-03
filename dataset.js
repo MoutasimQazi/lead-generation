@@ -307,8 +307,8 @@ function renderRows(data) {
     flagLegend() +
     '<div class="tablecard">' +
       '<div class="pager pager-top" id="pagerTop"></div>' +
-      '<div class="scroll"><table>' +
-        '<thead><tr><th>Status</th>' + head + '</tr></thead>' +
+      '<div class="scroll"><table class="rowtable">' +
+        '<thead><tr><th class="statuscol">Status</th>' + head + '</tr></thead>' +
         '<tbody>' + data.rows.map(rowHtml).join('') + '</tbody>' +
       '</table></div>' +
       '<div class="pager" id="pager"></div>' +
