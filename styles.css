@@ -371,6 +371,10 @@ td.st{color:var(--ink-2)}
 td.web a{color:var(--primary-ink);text-decoration:none;font-size:12.5px}
 td.web a:hover{text-decoration:underline}
 .blank{color:var(--ink-3);opacity:.5}
+.copytext{
+  cursor:pointer;border-bottom:1px dashed transparent;transition:border-color .15s,color .15s;
+}
+.copytext:hover,.copytext:focus-visible{color:var(--primary-ink);border-bottom-color:var(--primary)}
 
 /* ── lead flags ─────────────────────────────────────────────────────── */
 .flagcell{white-space:nowrap}

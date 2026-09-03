@@ -374,6 +374,30 @@ async function copyColumn(columnName) {
   }
 }
 
+/* ── click a single cell to copy it (delegated, wired once) ──────────────── */
+
+async function copyCellValue(el) {
+  const value = el.dataset.copyValue;
+  if (!value) return;
+
+  try {
+    await navigator.clipboard.writeText(value);
+    toast('Copied "' + value + '".');
+  } catch (err) {
+    toast('Could not copy — the browser blocked clipboard access.', true);
+  }
+}
+
+document.addEventListener('click', event => {
+  const el = event.target.closest('.copytext');
+  if (el) copyCellValue(el);
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const el = event.target.closest('.copytext');
+  if (el) { event.preventDefault(); copyCellValue(el); }
+});
+
 function rowHtml(row) {
   const flagClass = row.flag ? ' flag-row-' + row.flag.status : '';
   return '<tr class="lead-row' + flagClass + '" data-row-id="' + row._row_id + '">' +
@@ -400,7 +424,11 @@ function cellHtml(column, value) {
   }
 
   if (name.includes('email') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())) {
-    return '<td><a href="mailto:' + esc(v.trim()) + '">' + esc(v) + '</a></td>';
+    // Plain text, not a mailto: link — clicking a row shouldn't pop open the
+    // browser's mail client. Click-to-copy instead, same as the column-copy
+    // button above it.
+    return '<td><span class="copytext" data-copy-value="' + esc(v.trim()) +
+      '" title="Click to copy" tabindex="0" role="button">' + esc(v) + '</span></td>';
   }
 
   // A column named for a link (website, linkedin, ...url, ...link) is treated
