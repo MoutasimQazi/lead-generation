@@ -285,15 +285,19 @@ function renderRows(data) {
             (filters[c.name] === value ? ' selected' : '') + '>' + esc(value) + '</option>').join('') +
         '</select>'
       : '<input class="column-filter" type="search" data-filter="' + esc(c.name) + '" ' +
-          'placeholder="Filter..." value="' + esc(filters[c.name] || '') + '" ' +
+          'placeholder="Filter… (Enter)" value="' + esc(filters[c.name] || '') + '" ' +
           'aria-label="Filter ' + esc(c.label || c.name) + '">';
 
     return '<th>' +
-      '<button class="linkbtn" data-sort="' + esc(c.name) + '" ' +
-        'style="color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit">' +
-        esc(c.label || c.name) +
-        (sort === c.name ? (dir === 'asc' ? ' ▲' : ' ▼') : '') +
-      '</button>' +
+      '<div class="th-row">' +
+        '<button class="linkbtn" data-sort="' + esc(c.name) + '" ' +
+          'style="color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit">' +
+          esc(c.label || c.name) +
+          (sort === c.name ? (dir === 'asc' ? ' ▲' : ' ▼') : '') +
+        '</button>' +
+        '<button type="button" class="colcopy" data-copy-col="' + esc(c.name) + '" ' +
+          'title="Copy this column" aria-label="Copy ' + esc(c.label || c.name) + ' column">' + COPY_ICON + '</button>' +
+      '</div>' +
       control +
     '</th>';
   }).join('');
@@ -301,10 +305,14 @@ function renderRows(data) {
   $('status').innerHTML =
     '<div class="sechead"><h2>Rows</h2><span class="cbadge">' + fmt(data.total) + '</span></div>' +
     flagLegend() +
-    '<div class="tablecard"><div class="scroll"><table>' +
-      '<thead><tr><th>Status</th>' + head + '</tr></thead>' +
-      '<tbody>' + data.rows.map(rowHtml).join('') + '</tbody>' +
-    '</table></div><div class="pager" id="pager"></div></div>';
+    '<div class="tablecard">' +
+      '<div class="pager pager-top" id="pagerTop"></div>' +
+      '<div class="scroll"><table>' +
+        '<thead><tr><th>Status</th>' + head + '</tr></thead>' +
+        '<tbody>' + data.rows.map(rowHtml).join('') + '</tbody>' +
+      '</table></div>' +
+      '<div class="pager" id="pager"></div>' +
+    '</div>';
 
   renderPager(data);
   $$('[data-sort]').forEach(button => button.addEventListener('click', () => {
@@ -315,33 +323,98 @@ function renderRows(data) {
     loadRows();
   }));
 
-  $$('[data-filter]').forEach(input => input.addEventListener('input', event => {
-    const column = event.target.dataset.filter;
-    clearTimeout(window.datasetFilterTimer);
-    window.datasetFilterTimer = setTimeout(() => {
-      const value = event.target.value.trim();
-      if (value) filters[column] = value;
-      else delete filters[column];
-      page = 1;
-      loadRows();
-    }, 300);
-  }));
+  $$('[data-filter]').forEach(input => {
+    if (input.tagName === 'SELECT') {
+      input.addEventListener('change', () => applyFilter(input));
+    } else {
+      input.addEventListener('keydown', event => { if (event.key === 'Enter') applyFilter(input); });
+    }
+  });
+
+  $$('[data-copy-col]').forEach(button =>
+    button.addEventListener('click', () => copyColumn(button.dataset.copyCol)));
 
   $$('[data-flag-row]').forEach(select => select.addEventListener('change', event => {
     setRowFlag(Number(event.target.dataset.flagRow), event.target.value);
   }));
 }
 
+function applyFilter(input) {
+  const column = input.dataset.filter;
+  const value = input.value.trim();
+  if (value) filters[column] = value;
+  else delete filters[column];
+  page = 1;
+  loadRows();
+}
+
+/* ── copy a column (current page) to the clipboard ────────────────────── */
+
+const COPY_ICON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" focusable="false">' +
+    '<rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+    '<path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
+  '</svg>';
+
+async function copyColumn(columnName) {
+  if (!currentRows) return;
+  const column = columns.find(c => c.name === columnName);
+  const values = currentRows.rows
+    .map(r => r[columnName])
+    .filter(v => v !== null && v !== undefined && String(v).trim() !== '');
+
+  if (!values.length) return toast('Nothing to copy in this column.', true);
+
+  try {
+    await navigator.clipboard.writeText(values.join('\n'));
+    toast('Copied ' + fmt(values.length) + ' value' + (values.length === 1 ? '' : 's') +
+      ' from "' + (column ? (column.label || column.name) : columnName) + '".');
+  } catch (err) {
+    toast('Could not copy — the browser blocked clipboard access.', true);
+  }
+}
+
 function rowHtml(row) {
   const flagClass = row.flag ? ' flag-row-' + row.flag.status : '';
   return '<tr class="lead-row' + flagClass + '" data-row-id="' + row._row_id + '">' +
     flagCellHtml(row._row_id, row.flag) +
-    columns.map(column => {
-      const value = row[column.name];
-      return '<td>' + (value === null || value === undefined || value === ''
-        ? '<span class="blank">—</span>' : esc(value)) + '</td>';
-    }).join('') +
+    columns.map(column => cellHtml(column, row[column.name])).join('') +
   '</tr>';
+}
+
+/** Renders phone numbers, email addresses, and anything URL-shaped as
+ *  clickable links — by column name where the dataset labels it (phone,
+ *  email, website, linkedin, ...url/...link), and by the value's own shape
+ *  otherwise, so a column an admin named something unexpected still works. */
+function cellHtml(column, value) {
+  const v = (value === null || value === undefined) ? '' : String(value);
+  if (!v.trim()) return '<td><span class="blank">—</span></td>';
+
+  const name = column.name.toLowerCase();
+
+  if (name.includes('phone')) {
+    const digits = v.replace(/\D/g, '');
+    if (digits.length >= 7) {
+      return '<td class="tel"><a href="tel:' + digits + '" class="mono">' + esc(v) + '</a></td>';
+    }
+  }
+
+  if (name.includes('email') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())) {
+    return '<td><a href="mailto:' + esc(v.trim()) + '">' + esc(v) + '</a></td>';
+  }
+
+  // A column named for a link (website, linkedin, ...url, ...link) is treated
+  // as one even without a scheme; any other column only qualifies when the
+  // value itself is clearly a URL, so plain text never gets linkified.
+  const urlColumn = /website|linkedin|(^|_)url$|(^|_)link$/.test(name);
+  const trimmed = v.trim();
+  if (urlColumn || /^(https?:\/\/|www\.)/i.test(trimmed)) {
+    const href = /^https?:\/\//i.test(trimmed) ? trimmed : 'https://' + trimmed;
+    const shown = trimmed.replace(/^https?:\/\/(www\.)?/i, '').split('/')[0];
+    return '<td class="web"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(shown) + '</a></td>';
+  }
+
+  return '<td>' + esc(v) + '</td>';
 }
 
 async function setRowFlag(rowId, status) {
@@ -393,30 +466,70 @@ function pageButtons(cur, total) {
   return out;
 }
 
-function renderPager(data) {
-  const pages = data.pages;
-
-  $('pager').innerHTML =
+function pagerHtml(data, pages) {
+  return (
     '<span class="range mono">' + fmt((data.page - 1) * data.per + 1) + '–' +
       fmt(Math.min(data.page * data.per, data.total)) + ' of ' + fmt(data.total) + '</span>' +
     '<span class="spacer"></span>' +
     '<div class="pagenums">' +
-      '<button class="pg" id="prev"' + (data.page <= 1 ? ' disabled' : '') + '>Previous</button>' +
+      '<button class="pg" data-pg-prev' + (data.page <= 1 ? ' disabled' : '') + '>Previous</button>' +
       pageButtons(data.page, pages).map(p => p === '…'
         ? '<span class="pg-ellipsis">…</span>'
         : '<button class="pg pg-num' + (p === data.page ? ' active' : '') + '" data-page="' + p + '"' +
             (p === data.page ? ' disabled' : '') + '>' + p + '</button>'
       ).join('') +
-      '<button class="pg" id="next"' + (data.page >= pages ? ' disabled' : '') + '>Next</button>' +
-    '</div>';
+      '<button class="pg" data-pg-next' + (data.page >= pages ? ' disabled' : '') + '>Next</button>' +
+      (pages > 1
+        ? '<span class="pg-jump">' +
+            '<input type="number" min="1" max="' + pages + '" class="pg-jump-input" ' +
+              'placeholder="Page" aria-label="Go to page (1–' + pages + ')">' +
+            '<button class="pg" data-pg-go>Go</button>' +
+          '</span>'
+        : '') +
+    '</div>'
+  );
+}
 
-  $('prev').addEventListener('click', () => { if (page > 1) { page--; loadRows(); scrollTop(); } });
-  $('next').addEventListener('click', () => { if (page < pages) { page++; loadRows(); scrollTop(); } });
-  $$('[data-page]').forEach(button => button.addEventListener('click', () => {
+/** Wires one rendering of the pager (there are two — top and bottom — so
+ *  every control is looked up inside its own container, never by page-wide id). */
+function wirePager(container, pages) {
+  const prevBtn = container.querySelector('[data-pg-prev]');
+  const nextBtn = container.querySelector('[data-pg-next]');
+  if (prevBtn) prevBtn.addEventListener('click', () => { if (page > 1) { page--; loadRows(); scrollTop(); } });
+  if (nextBtn) nextBtn.addEventListener('click', () => { if (page < pages) { page++; loadRows(); scrollTop(); } });
+
+  container.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => {
     page = Number(button.dataset.page);
     loadRows();
     scrollTop();
   }));
+
+  const jumpInput = container.querySelector('.pg-jump-input');
+  const goBtn = container.querySelector('[data-pg-go]');
+  if (!jumpInput || !goBtn) return;
+
+  const jump = () => {
+    const n = Math.round(Number(jumpInput.value));
+    if (!n || n < 1 || n > pages) {
+      toast('Enter a page between 1 and ' + fmt(pages) + '.', true);
+      return;
+    }
+    page = n;
+    loadRows();
+    scrollTop();
+  };
+  goBtn.addEventListener('click', jump);
+  jumpInput.addEventListener('keydown', event => { if (event.key === 'Enter') jump(); });
+}
+
+function renderPager(data) {
+  const pages = data.pages;
+  const html = pagerHtml(data, pages);
+
+  const top = $('pagerTop');
+  const bottom = $('pager');
+  if (top) { top.innerHTML = html; wirePager(top, pages); }
+  if (bottom) { bottom.innerHTML = html; wirePager(bottom, pages); }
 }
 
 function scrollTop() {
@@ -424,11 +537,9 @@ function scrollTop() {
   if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-$('q').addEventListener('input', event => {
-  clearTimeout(window.datasetSearchTimer);
-  window.datasetSearchTimer = setTimeout(() => {
-    term = event.target.value.trim();
-    page = 1;
-    loadRows();
-  }, 300);
+$('q').addEventListener('keydown', event => {
+  if (event.key !== 'Enter') return;
+  term = event.target.value.trim();
+  page = 1;
+  loadRows();
 });

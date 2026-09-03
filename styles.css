@@ -332,6 +332,14 @@ thead th{
 }
 .column-filter option{background:var(--card);color:var(--ink)}
 .column-filter::placeholder{color:var(--ink-3)}
+.th-row{display:flex;align-items:center;gap:4px}
+.colcopy{
+  flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:20px;height:20px;padding:0;border:none;border-radius:5px;
+  background:none;color:var(--ink-3);opacity:.55;cursor:pointer;
+  transition:opacity .15s,background .15s,color .15s;
+}
+.colcopy:hover,.colcopy:focus-visible{opacity:1;background:var(--line-2);color:var(--primary-ink)}
 tbody td{padding:13px 16px;border-bottom:1px solid var(--line-2);vertical-align:top}
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover{background:var(--primary-soft)}
@@ -398,6 +406,14 @@ tr.flag-row-lost td{background:rgba(196,50,31,.05)}
   font-size:13px;flex-wrap:wrap;
 }
 .pager .spacer{flex:1}
+.pager-top{border-top:none;border-bottom:1px solid var(--line)}
+.pg-jump{display:inline-flex;align-items:center;gap:6px;margin-left:6px}
+.pg-jump-input{
+  width:58px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;
+  background:var(--card);color:var(--ink);font:600 13px var(--font-mono);text-align:center;
+}
+.pg-jump-input::-webkit-inner-spin-button,.pg-jump-input::-webkit-outer-spin-button{margin:0}
+.pg-jump-input:focus{outline:none;border-color:var(--primary)}
 .pg{
   background:var(--card);border:1px solid var(--line);border-radius:var(--r-pill);
   padding:8px 18px;font-size:13px;font-weight:600;color:var(--ink);
