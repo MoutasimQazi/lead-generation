@@ -482,7 +482,7 @@ function pagerHtml(data, pages) {
       (pages > 1
         ? '<span class="pg-jump">' +
             '<input type="number" min="1" max="' + pages + '" class="pg-jump-input" ' +
-              'placeholder="Page" aria-label="Go to page (1–' + pages + ')">' +
+              'placeholder="#" aria-label="Go to page (1–' + pages + ')">' +
             '<button class="pg" data-pg-go>Go</button>' +
           '</span>'
         : '') +
