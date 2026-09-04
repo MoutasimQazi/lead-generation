@@ -357,18 +357,22 @@ const COPY_ICON =
   '</svg>';
 
 async function copyColumn(columnName) {
-  if (!currentRows) return;
-  const column = columns.find(c => c.name === columnName);
-  const values = currentRows.rows
-    .map(r => r[columnName])
-    .filter(v => v !== null && v !== undefined && String(v).trim() !== '');
+  if (!currentRows || !currentRows.rows.length) return toast('Nothing to copy in this column.', true);
 
-  if (!values.length) return toast('Nothing to copy in this column.', true);
+  const column = columns.find(c => c.name === columnName);
+  // Blank cells copy as empty lines rather than being skipped, so row N in
+  // the copied list still lines up with row N on the page — matters when
+  // pasting this column alongside others that don't have the same gaps.
+  const values = currentRows.rows.map(r => {
+    const v = r[columnName];
+    return v === null || v === undefined ? '' : String(v);
+  });
+  const filled = values.filter(v => v.trim() !== '').length;
 
   try {
     await navigator.clipboard.writeText(values.join('\n'));
-    toast('Copied ' + fmt(values.length) + ' value' + (values.length === 1 ? '' : 's') +
-      ' from "' + (column ? (column.label || column.name) : columnName) + '".');
+    toast('Copied ' + fmt(values.length) + ' row' + (values.length === 1 ? '' : 's') +
+      ' (' + fmt(filled) + ' with a value) from "' + (column ? (column.label || column.name) : columnName) + '".');
   } catch (err) {
     toast('Could not copy — the browser blocked clipboard access.', true);
   }
