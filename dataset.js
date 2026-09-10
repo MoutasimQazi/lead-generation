@@ -10,6 +10,72 @@ let filters = {};
 let filterOptions = {};
 let assignmentEmployees = [];
 
+/* ── the view state lives in the URL ──────────────────────────────────────
+ * Search term, column filters, sort and page are kept in the query string so
+ * the browser's Back button steps back through them one at a time instead of
+ * leaving the dataset. Every control that changes the view goes through
+ * pushAndLoad(); Back fires popstate, which reads the state back out. */
+
+function stateParams() {
+  const params = new URLSearchParams();
+  params.set('id', id);
+  if (term) params.set('q', term);
+  if (sort) {
+    params.set('sort', sort);
+    if (dir === 'desc') params.set('dir', dir);
+  }
+  if (page > 1) params.set('page', page);
+  if (Object.keys(filters).length) params.set('filters', JSON.stringify(filters));
+  return params;
+}
+
+function readState() {
+  const params = new URLSearchParams(location.search);
+  term = params.get('q') || '';
+  sort = params.get('sort') || '';
+  dir = params.get('dir') === 'desc' ? 'desc' : 'asc';
+  page = Math.max(1, Math.round(Number(params.get('page'))) || 1);
+
+  filters = {};
+  try {
+    const parsed = JSON.parse(params.get('filters') || '{}');
+    // A hand-edited or truncated link shouldn't take the whole page down.
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      // Values go back in as text — the filter inputs and the rows API both
+      // expect strings, whatever a hand-edited link happened to carry.
+      for (const [column, value] of Object.entries(parsed)) {
+        if (value === null || value === undefined) continue;
+        const text = String(value).trim();
+        if (text) filters[column] = text;
+      }
+    }
+  } catch (err) {
+    filters = {};
+  }
+
+  if ($('q')) $('q').value = term;
+}
+
+function syncUrl(push) {
+  const search = '?' + stateParams();
+  if (search === location.search) return;
+  const url = location.pathname + search;
+  if (push) history.pushState(null, '', url);
+  else history.replaceState(null, '', url);
+}
+
+function pushAndLoad() {
+  syncUrl(true);
+  loadRows();
+}
+
+window.addEventListener('popstate', () => {
+  readState();
+  // The column filter inputs are part of the table, so re-rendering the rows
+  // is what puts them back to what this history entry held.
+  if (ds && ds.status === 'ready') loadRows();
+});
+
 (async () => {
   await requireSession({ page: 'datasets' });
 
@@ -17,6 +83,9 @@ let assignmentEmployees = [];
     showError($('status'), 'No dataset selected', 'Go back to <a href="datasets.html">Datasets</a>.');
     return;
   }
+
+  readState();
+  syncUrl(false);
 
   await loadDataset();
 })();
@@ -320,7 +389,7 @@ function renderRows(data) {
     if (sort === column) dir = dir === 'asc' ? 'desc' : 'asc';
     else { sort = column; dir = 'asc'; }
     page = 1;
-    loadRows();
+    pushAndLoad();
   }));
 
   $$('[data-filter]').forEach(input => {
@@ -345,7 +414,7 @@ function applyFilter(input) {
   if (value) filters[column] = value;
   else delete filters[column];
   page = 1;
-  loadRows();
+  pushAndLoad();
 }
 
 /* ── copy a column (current page) to the clipboard ────────────────────── */
@@ -527,12 +596,12 @@ function pagerHtml(data, pages) {
 function wirePager(container, pages) {
   const prevBtn = container.querySelector('[data-pg-prev]');
   const nextBtn = container.querySelector('[data-pg-next]');
-  if (prevBtn) prevBtn.addEventListener('click', () => { if (page > 1) { page--; loadRows(); scrollTop(); } });
-  if (nextBtn) nextBtn.addEventListener('click', () => { if (page < pages) { page++; loadRows(); scrollTop(); } });
+  if (prevBtn) prevBtn.addEventListener('click', () => { if (page > 1) { page--; pushAndLoad(); scrollTop(); } });
+  if (nextBtn) nextBtn.addEventListener('click', () => { if (page < pages) { page++; pushAndLoad(); scrollTop(); } });
 
   container.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => {
     page = Number(button.dataset.page);
-    loadRows();
+    pushAndLoad();
     scrollTop();
   }));
 
@@ -547,7 +616,7 @@ function wirePager(container, pages) {
       return;
     }
     page = n;
-    loadRows();
+    pushAndLoad();
     scrollTop();
   };
   goBtn.addEventListener('click', jump);
@@ -573,5 +642,5 @@ $('q').addEventListener('keydown', event => {
   if (event.key !== 'Enter') return;
   term = event.target.value.trim();
   page = 1;
-  loadRows();
+  pushAndLoad();
 });
