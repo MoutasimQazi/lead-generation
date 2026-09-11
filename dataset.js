@@ -384,6 +384,7 @@ function renderRows(data) {
     '</div>';
 
   renderPager(data);
+  restoreCopiedMark();
   $$('[data-sort]').forEach(button => button.addEventListener('click', () => {
     const column = button.dataset.sort;
     if (sort === column) dir = dir === 'asc' ? 'desc' : 'asc';
@@ -455,10 +456,62 @@ async function copyCellValue(el) {
 
   try {
     await navigator.clipboard.writeText(value);
+    markCopied(el);
     toast('Copied "' + value + '".');
   } catch (err) {
     toast('Could not copy — the browser blocked clipboard access.', true);
   }
+}
+
+/* ── remember the last cell copied ────────────────────────────────────────
+ * Copying an address usually means leaving the page to use it, so the last
+ * one copied stays highlighted — including after a reload or a trip through
+ * another dataset — to show where you left off. One per dataset. */
+
+const LAST_COPY_KEY = 'lastCopiedCell:' + id;
+
+function markCopied(el) {
+  $$('.copytext.copied-last').forEach(other => {
+    other.classList.remove('copied-last');
+    other.title = 'Click to copy';
+  });
+
+  el.classList.add('copied-last');
+  el.title = 'Last copied — click to copy again';
+
+  const row = el.closest('[data-row-id]');
+  try {
+    localStorage.setItem(LAST_COPY_KEY, JSON.stringify({
+      rowId: row ? row.dataset.rowId : null,
+      field: el.dataset.copyField || null,
+      value: el.dataset.copyValue,
+    }));
+  } catch (err) {
+    // Private browsing or a full quota — the mark still holds for this view.
+  }
+}
+
+/** Puts the mark back after the table is rebuilt — a search, a filter, a new
+ *  page or a fresh load. The row simply isn't there under most filters, and
+ *  then nothing is marked. */
+function restoreCopiedMark() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(LAST_COPY_KEY) || 'null');
+  } catch (err) {
+    return;
+  }
+  if (!saved || !saved.rowId || !saved.field) return;
+
+  const row = document.querySelector('[data-row-id="' + CSS.escape(saved.rowId) + '"]');
+  if (!row) return;
+
+  const cell = row.querySelector('.copytext[data-copy-field="' + CSS.escape(saved.field) + '"]');
+  // An edited address is no longer the one that was copied, so leave it plain.
+  if (!cell || cell.dataset.copyValue !== saved.value) return;
+
+  cell.classList.add('copied-last');
+  cell.title = 'Last copied — click to copy again';
 }
 
 document.addEventListener('click', event => {
@@ -501,6 +554,7 @@ function cellHtml(column, value) {
     // browser's mail client. Click-to-copy instead, same as the column-copy
     // button above it.
     return '<td><span class="copytext" data-copy-value="' + esc(v.trim()) +
+      '" data-copy-field="' + esc(column.name) +
       '" title="Click to copy" tabindex="0" role="button">' + esc(v) + '</span></td>';
   }
 
