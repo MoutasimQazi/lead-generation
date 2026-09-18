@@ -5,6 +5,15 @@ let datasets = [], folders = [];
 // narrowing the search, doesn't silently drop them from the selection.
 let selected = new Set();
 
+// Folder ids (or null for Unfiled) whose section is collapsed. In-memory
+// only — resets on reload, same as the filter box.
+let collapsed = new Set();
+
+// Group ids are either a folder's numeric id or null (Unfiled); HTML data
+// attributes only hold strings, so these round-trip null through ''.
+function groupKeyAttr(id) { return id === null ? '' : String(id); }
+function groupKeyFromAttr(v) { return v === '' ? null : Number(v); }
+
 (async () => {
   const user = await requireSession({ page: 'datasets' });
 
@@ -97,24 +106,40 @@ function render() {
   for (const g of groups.values()) {
     if (!g.items.length) continue;
 
+    const key = groupKeyAttr(g.id);
+    const isCollapsed = collapsed.has(g.id);
     const rows = g.items.reduce((n, d) => n + d.row_count, 0);
+    const groupMovable = g.items.filter(movable);
+
+    const groupSelectAll = session.user.is_admin && groupMovable.length
+      ? '<label class="check" data-selectgroup="' + key + '" title="Select all in ' + esc(g.name) + '">' +
+          '<input type="checkbox"><span>Select all</span></label>'
+      : '';
 
     html +=
-      '<div class="sechead" style="margin-top:22px">' +
+      '<div class="sechead foldhead' + (isCollapsed ? ' collapsed' : '') +
+        '" style="margin-top:22px" data-togglegroup="' + key + '" tabindex="0" role="button" ' +
+        'aria-expanded="' + !isCollapsed + '">' +
+        '<span class="foldchevron">▾</span>' +
         '<h2>' + esc(g.name) + '</h2>' +
         '<span class="cbadge">' + g.items.length + '</span>' +
         '<span class="timing">' + fmt(rows) + ' rows</span>' +
+        groupSelectAll +
         '<span class="spacer"></span>' +
         (g.id !== null && session.user.is_admin
           ? '<button class="linkbtn" data-delfolder="' + g.id + '">Delete folder</button>' : '') +
       '</div>' +
-      g.items.map(card).join('');
+      (isCollapsed ? '' : g.items.map(card).join(''));
   }
 
   status.innerHTML = html;
 
-  $$('[data-delfolder]').forEach(b =>
-    b.addEventListener('click', () => deleteFolder(Number(b.dataset.delfolder))));
+  $$('[data-delfolder]').forEach(b => {
+    b.addEventListener('click', event => {
+      event.stopPropagation();
+      deleteFolder(Number(b.dataset.delfolder));
+    });
+  });
 
   $$('.dscard .switch').forEach(label =>
     label.addEventListener('click', event => event.stopPropagation()));
@@ -133,7 +158,68 @@ function render() {
     cb.addEventListener('change', () => toggleSelect(Number(cb.dataset.select), cb.checked));
   });
 
+  $$('[data-togglegroup]').forEach(head => {
+    const toggle = () => toggleGroupCollapse(groupKeyFromAttr(head.dataset.togglegroup));
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', event => {
+      // Only when the header itself is focused — not a nested control like
+      // the delete-folder button, which already has its own Enter/Space.
+      if (event.target !== head) return;
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(); }
+    });
+  });
+
+  $$('[data-selectgroup]').forEach(label => {
+    label.addEventListener('click', event => event.stopPropagation());
+    const cb = label.querySelector('input');
+    cb.addEventListener('change', () =>
+      toggleSelectGroup(groupKeyFromAttr(label.dataset.selectgroup), cb.checked));
+  });
+
   updateSelectAll(visible.filter(movable));
+  syncGroupSelectAllBoxes();
+}
+
+function toggleGroupCollapse(key) {
+  if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
+  render();
+}
+
+/** Which folder section a dataset falls into — its own folder_id, or null
+ *  (Unfiled) if that folder was deleted out from under it. Mirrors the
+ *  grouping logic in render() so selection and display always agree. */
+function datasetGroupKey(d) {
+  return folders.some(f => f.id === d.folder_id) ? d.folder_id : null;
+}
+
+function toggleSelectGroup(key, on) {
+  const ids = visibleDatasets()
+    .filter(d => movable(d) && datasetGroupKey(d) === key)
+    .map(d => d.id);
+
+  if (on) ids.forEach(id => selected.add(id));
+  else ids.forEach(id => selected.delete(id));
+  render();
+}
+
+/** Reflects the current selection on each folder section's own
+ *  "select all" checkbox, tri-state included. */
+function syncGroupSelectAllBoxes() {
+  $$('[data-selectgroup]').forEach(label => {
+    const key = groupKeyFromAttr(label.dataset.selectgroup);
+    const cb = label.querySelector('input');
+    const items = visibleDatasets().filter(d => movable(d) && datasetGroupKey(d) === key);
+
+    if (!items.length) {
+      cb.checked = false;
+      cb.indeterminate = false;
+      return;
+    }
+
+    const selectedCount = items.filter(d => selected.has(d.id)).length;
+    cb.checked = selectedCount === items.length;
+    cb.indeterminate = selectedCount > 0 && !cb.checked;
+  });
 }
 
 function card(d) {
@@ -217,6 +303,7 @@ $('selectAll').addEventListener('change', () => {
 function toggleSelect(id, on) {
   if (on) selected.add(id); else selected.delete(id);
   updateSelectAll(visibleDatasets().filter(movable));
+  syncGroupSelectAllBoxes();
   renderBulkBar();
 }
 

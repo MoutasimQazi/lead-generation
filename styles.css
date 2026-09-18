@@ -192,6 +192,16 @@ input{font-family:inherit}
 }
 .timing{color:var(--ink-3);font-size:12.5px;font-weight:400}
 
+/* ── collapsible folder sections ───────────────────────────────────────── */
+.sechead.foldhead{cursor:pointer;user-select:none}
+.sechead.foldhead:hover h2{color:var(--primary-ink)}
+.foldchevron{
+  display:inline-block;flex:none;width:14px;text-align:center;
+  color:var(--ink-3);font-size:11px;transition:transform .15s;
+}
+.sechead.foldhead.collapsed .foldchevron{transform:rotate(-90deg)}
+.sechead .check{font-size:12.5px}
+
 /* ── ask ────────────────────────────────────────────────────────────── */
 .ask{
   background:var(--card);border:1px solid var(--line);border-radius:var(--r-pill);
