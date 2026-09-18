@@ -1,11 +1,17 @@
 let datasets = [], folders = [];
 
+// Dataset ids the user has checked, for the bulk "move to folder" action.
+// Kept independent of the current filter, so selecting some cards, then
+// narrowing the search, doesn't silently drop them from the selection.
+let selected = new Set();
+
 (async () => {
   const user = await requireSession({ page: 'datasets' });
 
   if (user.is_admin) {
     $('newFolder').hidden = false;
     $('uploadLink').hidden = false;
+    $('selectAllWrap').hidden = false;
   }
 
   await load();
@@ -19,19 +25,36 @@ async function load() {
     const [d, f] = await Promise.all([apiGet('api/datasets'), apiGet('api/folders')]);
     datasets = d.datasets;
     folders = f.folders;
+
+    const ids = new Set(datasets.map(d2 => d2.id));
+    selected.forEach(id => { if (!ids.has(id)) selected.delete(id); });
+
     render();
   } catch (err) {
     showError(status, 'Could not load datasets', esc(err.message));
   }
 }
 
-function render() {
-  const status = $('status');
+/** A dataset qualifies for bulk move when it's not the protected master
+ *  table — moving that one is blocked server-side regardless. */
+function movable(d) {
+  return !d.is_protected;
+}
+
+function visibleDatasets() {
   const term = $('filter').value.trim().toLowerCase();
-  const visible = term
+  return term
     ? datasets.filter(d => d.display_name.toLowerCase().includes(term)
                         || (d.folder_name || '').toLowerCase().includes(term))
     : datasets;
+}
+
+function render() {
+  const status = $('status');
+  const term = $('filter').value.trim();
+  const visible = visibleDatasets();
+
+  renderBulkBar();
 
   if (!datasets.length) {
     status.innerHTML =
@@ -40,23 +63,34 @@ function render() {
         ? 'Upload a CSV or spreadsheet to create your first table.'
         : 'An administrator needs to upload data before it appears here.') +
       '</p></div>';
+    updateSelectAll([]);
     return;
   }
 
   if (!visible.length) {
     status.innerHTML = '<div class="empty"><h3>Nothing matches "' + esc(term) + '"</h3>' +
                        '<p>Try a shorter search.</p></div>';
+    updateSelectAll([]);
     return;
   }
 
+  // Folders sort alphabetically (not DB insertion order) so the section list
+  // is stable and predictable; Unfiled always trails as the catch-all.
+  const sortedFolders = [...folders].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
   const groups = new Map();
-  folders.forEach(f => groups.set(f.id, { name: f.name, id: f.id, items: [] }));
+  sortedFolders.forEach(f => groups.set(f.id, { name: f.name, id: f.id, items: [] }));
   groups.set(null, { name: 'Unfiled', id: null, items: [] });
 
   visible.forEach(d => {
     const key = groups.has(d.folder_id) ? d.folder_id : null;
     groups.get(key).items.push(d);
   });
+
+  // Datasets within each folder sort alphabetically too, same rule.
+  groups.forEach(g => g.items.sort((a, b) =>
+    a.display_name.localeCompare(b.display_name, undefined, { sensitivity: 'base' })));
 
   let html = '';
 
@@ -93,6 +127,13 @@ function render() {
     el.addEventListener('change', () =>
       togglePersonalSearch(Number(el.dataset.userSearch), el.checked));
   });
+
+  $$('.dscard [data-select]').forEach(cb => {
+    cb.addEventListener('click', event => event.stopPropagation());
+    cb.addEventListener('change', () => toggleSelect(Number(cb.dataset.select), cb.checked));
+  });
+
+  updateSelectAll(visible.filter(movable));
 }
 
 function card(d) {
@@ -122,7 +163,14 @@ function card(d) {
       '</div>'
     : '';
 
+  const check = session.user.is_admin && movable(d)
+    ? '<label class="check" title="Select for bulk move" aria-label="Select ' + esc(d.display_name) + '">' +
+        '<input type="checkbox" data-select="' + d.id + '"' + (selected.has(d.id) ? ' checked' : '') + '>' +
+      '</label>'
+    : '';
+
   return '<a class="dscard' + (d.is_protected ? ' locked' : '') + '" href="dataset.html?id=' + d.id + '">' +
+    check +
     '<span>' +
       '<span class="title">' + esc(d.display_name) + '</span>' +
       '<div class="meta-line">' + meta + '</div>' +
@@ -158,6 +206,96 @@ $('folderSave').addEventListener('click', async () => {
 $('folderName').addEventListener('keydown', e => {
   if (e.key === 'Enter') $('folderSave').click();
 });
+
+$('selectAll').addEventListener('change', () => {
+  const ids = visibleDatasets().filter(movable).map(d => d.id);
+  if ($('selectAll').checked) ids.forEach(id => selected.add(id));
+  else ids.forEach(id => selected.delete(id));
+  render();
+});
+
+function toggleSelect(id, on) {
+  if (on) selected.add(id); else selected.delete(id);
+  updateSelectAll(visibleDatasets().filter(movable));
+  renderBulkBar();
+}
+
+/** Reflects the current selection on the toolbar "select all" checkbox,
+ *  including the tri-state (indeterminate) case. */
+function updateSelectAll(movableVisible) {
+  const box = $('selectAll');
+  if (!movableVisible.length) {
+    box.checked = false;
+    box.indeterminate = false;
+    return;
+  }
+
+  const selectedCount = movableVisible.filter(d => selected.has(d.id)).length;
+  box.checked = selectedCount === movableVisible.length;
+  box.indeterminate = selectedCount > 0 && !box.checked;
+}
+
+function renderBulkBar() {
+  const bar = $('bulkbar');
+
+  if (!session.user.is_admin || selected.size === 0) {
+    bar.hidden = true;
+    bar.innerHTML = '';
+    return;
+  }
+
+  bar.hidden = false;
+  bar.innerHTML =
+    '<strong>' + selected.size + ' selected</strong>' +
+    '<span class="spacer"></span>' +
+    '<select id="bulkFolder">' +
+      '<option value="" disabled selected>Move to folder…</option>' +
+      '<option value="0">No folder (Unfiled)</option>' +
+      folders.map(f => '<option value="' + f.id + '">' + esc(f.name) + '</option>').join('') +
+    '</select>' +
+    '<button class="btn btn-primary" id="bulkMove">Move</button>' +
+    '<button class="linkbtn" id="bulkClear">Clear selection</button>';
+
+  $('bulkMove').addEventListener('click', () => {
+    const v = $('bulkFolder').value;
+    if (!v) return toast('Choose a folder first.', true);
+    bulkMoveSelected(v === '0' ? null : Number(v));
+  });
+
+  $('bulkClear').addEventListener('click', () => {
+    selected.clear();
+    render();
+  });
+}
+
+async function bulkMoveSelected(folderId) {
+  const ids = [...selected];
+  if (!ids.length) return;
+
+  const btn = $('bulkMove');
+  if (btn) btn.disabled = true;
+
+  try {
+    const results = await Promise.allSettled(
+      ids.map(id => apiPatch('api/datasets/' + id, { folder_id: folderId }))
+    );
+    const failed = results.filter(r => r.status === 'rejected').length;
+    const ok = results.length - failed;
+
+    selected.clear();
+    await load();
+
+    if (failed) {
+      toast('Moved ' + ok + ', but ' + failed + ' failed.', true);
+    } else {
+      toast('Moved ' + ok + ' dataset' + (ok === 1 ? '' : 's') + '.');
+    }
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    if (btn && btn.isConnected) btn.disabled = false;
+  }
+}
 
 async function toggleSearchable(id, on) {
   try {

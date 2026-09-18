@@ -23,10 +23,15 @@
 
   <div class="toolbar">
     <input type="search" id="filter" placeholder="Filter by name…" autocomplete="off">
+    <label class="check" id="selectAllWrap" hidden>
+      <input type="checkbox" id="selectAll"><span>Select all</span>
+    </label>
     <span class="spacer"></span>
     <button class="btn" id="newFolder" hidden>New folder</button>
     <a class="btn btn-primary" id="uploadLink" href="upload.html" hidden>Upload files</a>
   </div>
+
+  <div class="bulkbar" id="bulkbar" hidden></div>
 
   <div id="status"></div>
 
@@ -49,7 +54,7 @@
 </div>
 
 <script src="app.js?v=20260918-1"></script>
-<script src="datasets.js?v=20260901-4"></script>
+<script src="datasets.js?v=20260918-2"></script>
 <script type="application/json">
 let datasets = [], folders = [];
 

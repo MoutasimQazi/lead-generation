@@ -557,6 +557,16 @@ body.centered::before{
 }
 .toolbar input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px var(--primary-glow)}
 
+/* ── bulk selection bar ─────────────────────────────────────────────────── */
+.bulkbar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--card);border:1px solid var(--line);border-left:4px solid var(--primary);
+  border-radius:var(--r-card);padding:11px 16px;margin-bottom:16px;font-size:13px;
+}
+.bulkbar[hidden]{display:none}
+.bulkbar strong{font-weight:700}
+.bulkbar .spacer{flex:1}
+
 /* ── selects ────────────────────────────────────────────────────────────── */
 select{
   font-family:inherit;font-size:13px;color:var(--ink);
@@ -661,6 +671,7 @@ select:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px var(-
 
 /* ── checkbox ───────────────────────────────────────────────────────────── */
 .check{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px}
+.check[hidden]{display:none}
 .check input{
   appearance:none;width:17px;height:17px;flex:none;
   border:1.5px solid var(--line);border-radius:5px;background:var(--card);
