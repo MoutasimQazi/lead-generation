@@ -193,14 +193,40 @@ input{font-family:inherit}
 .timing{color:var(--ink-3);font-size:12.5px;font-weight:400}
 
 /* ── collapsible folder sections ───────────────────────────────────────── */
-.sechead.foldhead{cursor:pointer;user-select:none}
-.sechead.foldhead:hover h2{color:var(--primary-ink)}
-.foldchevron{
-  display:inline-block;flex:none;width:14px;text-align:center;
-  color:var(--ink-3);font-size:11px;transition:transform .15s;
+.sechead.foldhead{
+  cursor:pointer;user-select:none;border-radius:var(--r-sm);
+  padding:6px 8px;margin-left:-8px;transition:background .12s;
 }
+.sechead.foldhead:hover,.sechead.foldhead:focus-visible{background:var(--sunken)}
+.sechead.foldhead:focus-visible{outline:2px solid var(--primary-glow);outline-offset:-2px}
+.foldchevron{
+  display:inline-flex;flex:none;align-items:center;justify-content:center;
+  width:16px;height:16px;color:var(--ink-3);transition:transform .15s;
+}
+.foldchevron svg{display:block}
 .sechead.foldhead.collapsed .foldchevron{transform:rotate(-90deg)}
-.sechead .check{font-size:12.5px}
+
+/* Per-folder "select all" — icon-only so a long list of folders doesn't turn
+   into a wall of repeated "Select all" labels; the toolbar's own checkbox
+   keeps the text version. */
+.groupselect{
+  display:inline-flex;align-items:center;cursor:pointer;flex:none;
+}
+.groupselect input{
+  appearance:none;width:17px;height:17px;flex:none;
+  border:1.5px solid var(--line);border-radius:5px;background:var(--card);
+  cursor:pointer;transition:background .15s,border-color .15s;
+}
+.groupselect input:checked{background:var(--primary);border-color:var(--primary)}
+.groupselect input:checked::after{
+  content:"";display:block;width:5px;height:9px;margin:1px auto 0;
+  border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);
+}
+.groupselect input:indeterminate{background:var(--primary-soft);border-color:var(--primary)}
+.groupselect input:indeterminate::after{
+  content:"";display:block;width:9px;height:2px;margin:6.5px auto 0;background:var(--primary-ink);
+}
+.groupselect input:focus-visible{box-shadow:0 0 0 3px var(--primary-glow)}
 
 /* ── ask ────────────────────────────────────────────────────────────── */
 .ask{

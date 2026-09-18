@@ -14,6 +14,12 @@ let collapsed = new Set();
 function groupKeyAttr(id) { return id === null ? '' : String(id); }
 function groupKeyFromAttr(v) { return v === '' ? null : Number(v); }
 
+const CHEVRON_ICON =
+  '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false">' +
+    '<path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"/>' +
+  '</svg>';
+
 (async () => {
   const user = await requireSession({ page: 'datasets' });
 
@@ -112,20 +118,21 @@ function render() {
     const groupMovable = g.items.filter(movable);
 
     const groupSelectAll = session.user.is_admin && groupMovable.length
-      ? '<label class="check" data-selectgroup="' + key + '" title="Select all in ' + esc(g.name) + '">' +
-          '<input type="checkbox"><span>Select all</span></label>'
+      ? '<label class="groupselect" data-selectgroup="' + key + '" title="Select all in ' + esc(g.name) + '">' +
+          '<input type="checkbox" aria-label="Select all in ' + esc(g.name) + '">' +
+        '</label>'
       : '';
 
     html +=
       '<div class="sechead foldhead' + (isCollapsed ? ' collapsed' : '') +
         '" style="margin-top:22px" data-togglegroup="' + key + '" tabindex="0" role="button" ' +
         'aria-expanded="' + !isCollapsed + '">' +
-        '<span class="foldchevron">▾</span>' +
+        '<span class="foldchevron">' + CHEVRON_ICON + '</span>' +
         '<h2>' + esc(g.name) + '</h2>' +
         '<span class="cbadge">' + g.items.length + '</span>' +
         '<span class="timing">' + fmt(rows) + ' rows</span>' +
-        groupSelectAll +
         '<span class="spacer"></span>' +
+        groupSelectAll +
         (g.id !== null && session.user.is_admin
           ? '<button class="linkbtn" data-delfolder="' + g.id + '">Delete folder</button>' : '') +
       '</div>' +
