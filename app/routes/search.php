@@ -151,16 +151,9 @@ const SEARCH_MAX_ROWS_DEFAULT = 250;
 function route_search(): never
 {
     $user = require_auth();
+    // require_csrf() also releases the session lock before we make the slow
+    // n8n call below — see the comment on it in app/auth.php.
     require_csrf();
-
-    // PHP's default session handler holds an exclusive lock on this session's
-    // file for as long as the request runs. The n8n call below can take up to
-    // n8n_timeout (120s default) — without releasing the lock first, every
-    // other request on the same session (another tab, or the page's own
-    // routine /api/auth/me check on reload) queues behind it and can time out
-    // waiting, even though nothing is actually wrong server-side. Nothing
-    // past this point reads or writes $_SESSION, so it's safe to let go now.
-    session_write_close();
 
     $question = body_string('question', '', 2000) ?? '';
 

@@ -66,6 +66,18 @@ function current_user(): ?array
 
     $id = $_SESSION['uid'] ?? null;
 
+    // Release the session lock now. PHP's default session handler holds an
+    // exclusive lock on this session's file for as long as the request runs,
+    // and everything downstream of an auth check — the DB lookup below, or
+    // whatever the route does next (a slow search, an upload, an export) —
+    // can take a while. Without closing here, that holds up every other
+    // request on the same session (another tab, or even that tab's own next
+    // /api/auth/me check) until this one finishes, tripping their own much
+    // shorter timeouts for no real reason. auth_logout(), csrf_token() and
+    // auth_login() all reopen the session themselves via session_boot() on
+    // the rare request that still needs to write to it.
+    session_write_close();
+
     if (!$id) {
         return $user = null;
     }
@@ -268,4 +280,16 @@ function require_csrf(): void
             fail('Request origin not allowed.', 403);
         }
     }
+
+    // PHP's default session handler holds an exclusive lock on this session's
+    // file for as long as the request runs. Every state-changing route calls
+    // this function, and some (search, uploads, imports) can then run for a
+    // long time — without releasing the lock here, that holds up every other
+    // request on the same session (another tab, or even just that tab's own
+    // routine /api/auth/me check on its next reload) until the slow one
+    // finishes, which can trip their own much shorter timeouts. Nothing past
+    // this point needs to read or write $_SESSION; csrf_token() and
+    // auth_login()/auth_logout() reopen it themselves via session_boot() on
+    // the rare request that does.
+    session_write_close();
 }
