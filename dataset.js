@@ -532,10 +532,12 @@ function rowHtml(row) {
   '</tr>';
 }
 
-/** Renders phone numbers, email addresses, and anything URL-shaped as
- *  clickable links — by column name where the dataset labels it (phone,
- *  email, website, linkedin, ...url/...link), and by the value's own shape
- *  otherwise, so a column an admin named something unexpected still works. */
+/** Renders phone numbers and email addresses as click-to-copy text (never a
+ *  tel:/mailto: link — clicking a row shouldn't try to launch a dialer or
+ *  mail client), and anything URL-shaped as a clickable link. Recognized by
+ *  column name where the dataset labels it (phone, email, website,
+ *  linkedin, ...url/...link), and by the value's own shape otherwise, so a
+ *  column an admin named something unexpected still works. */
 function cellHtml(column, value) {
   const v = (value === null || value === undefined) ? '' : String(value);
   if (!v.trim()) return '<td><span class="blank">—</span></td>';
@@ -545,7 +547,11 @@ function cellHtml(column, value) {
   if (name.includes('phone')) {
     const digits = v.replace(/\D/g, '');
     if (digits.length >= 7) {
-      return '<td class="tel"><a href="tel:' + digits + '" class="mono">' + esc(v) + '</a></td>';
+      // Plain text, not a tel: link — clicking a row shouldn't try to launch
+      // a dialer. Click-to-copy instead, same as email cells below.
+      return '<td class="tel"><span class="copytext mono" data-copy-value="' + esc(v.trim()) +
+        '" data-copy-field="' + esc(column.name) +
+        '" title="Click to copy" tabindex="0" role="button">' + esc(v) + '</span></td>';
     }
   }
 

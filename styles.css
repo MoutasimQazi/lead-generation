@@ -367,8 +367,6 @@ td.name{font-weight:600;min-width:190px}
 }
 .libtn svg{flex:none}
 td.tel{white-space:nowrap}
-td.tel a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line)}
-td.tel a:hover{border-bottom-color:var(--primary);color:var(--primary-ink)}
 .line{
   display:inline-flex;align-items:center;gap:6px;margin-left:9px;
   font-size:10px;letter-spacing:.07em;text-transform:uppercase;
