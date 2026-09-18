@@ -173,27 +173,32 @@ function scrollTop(){
   document.querySelector('.tablecard').scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
+function applySearchRowFlag(rowId, flag) {
+  const row = rows.find(r => Number(r._row_id) === rowId);
+  if (row) row.flag = flag;
+
+  const tr = document.querySelector('tr[data-row-id="' + rowId + '"]');
+  if (!tr) return;
+
+  tr.className = flag ? 'flag-row-' + flag.status : '';
+  const cellEl = tr.querySelector('.flagcell');
+  if (cellEl) cellEl.outerHTML = flagCellHtml(rowId, flag);
+  const newSelect = tr.querySelector('[data-flag-row]');
+  if (newSelect) newSelect.addEventListener('change', event =>
+    setSearchRowFlag(Number(event.target.dataset.flagRow), event.target.value));
+}
+
 async function setSearchRowFlag(rowId, status){
   const select = document.querySelector('[data-flag-row="' + rowId + '"]');
-  const tr = select ? select.closest('tr') : null;
 
   try {
     if (select) select.disabled = true;
     const result = await patchRowFlag(resultDatasetId, rowId, status);
 
-    const row = rows.find(r => Number(r._row_id) === rowId);
-    if (row) row.flag = result.flag;
+    applySearchRowFlag(rowId, result.flag);
+    (result.also_flagged_rows || []).forEach(rid => applySearchRowFlag(rid, result.flag));
 
-    if (tr) {
-      tr.className = result.flag ? 'flag-row-' + result.flag.status : '';
-      const cellEl = tr.querySelector('.flagcell');
-      if (cellEl) cellEl.outerHTML = flagCellHtml(rowId, result.flag);
-      const newSelect = tr.querySelector('[data-flag-row]');
-      if (newSelect) newSelect.addEventListener('change', event =>
-        setSearchRowFlag(Number(event.target.dataset.flagRow), event.target.value));
-    }
-
-    toast(status ? 'Marked as ' + FLAG_LABELS[status].toLowerCase() + '.' : 'Status cleared.');
+    toast(flagToastMessage(status, result.also_flagged));
   } catch (err) {
     toast(err.message, true);
     if (select) select.value = (rows.find(r => Number(r._row_id) === rowId) || {}).flag?.status || '';

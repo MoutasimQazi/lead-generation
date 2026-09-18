@@ -7,6 +7,7 @@ require_once __DIR__ . '/../lib/identifiers.php';
 require_once __DIR__ . '/../lib/inference.php';
 require_once __DIR__ . '/../lib/importer.php';
 require_once __DIR__ . '/../lib/audit.php';
+require_once __DIR__ . '/../lib/lead_matching.php';
 
 /**
  * Dataset browsing and editing.
@@ -715,6 +716,17 @@ function route_row_flag_update(int $id, int $rowId): never
 
     audit('row.flag_set', $user, $id, ['row_id' => $rowId, 'status' => $status]);
 
+    $matched      = propagate_lead_flag($d, $rowId, $status, $user);
+    $matchedCount = array_sum(array_map('count', $matched));
+
+    if ($matchedCount > 0) {
+        audit('row.flag_auto_set', $user, $id, [
+            'source_row_id' => $rowId,
+            'status'        => $status,
+            'matched'       => $matched,
+        ]);
+    }
+
     json_ok([
         'flag' => [
             'status' => $status,
@@ -722,6 +734,8 @@ function route_row_flag_update(int $id, int $rowId): never
             'set_by' => $user['full_name'],
             'set_at' => date('Y-m-d H:i:s'),
         ],
+        'also_flagged'      => $matchedCount,
+        'also_flagged_rows' => $matched[$id] ?? [],
     ]);
 }
 

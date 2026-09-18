@@ -572,29 +572,36 @@ function cellHtml(column, value) {
   return '<td>' + esc(v) + '</td>';
 }
 
+/** Applies a flag to one row's table cell + in-memory row, wiring the
+ *  change handler back up on the fresh <select> the cell re-render leaves. */
+function applyRowFlag(rowId, flag) {
+  if (currentRows) {
+    const row = currentRows.rows.find(r => Number(r._row_id) === rowId);
+    if (row) row.flag = flag;
+  }
+
+  const tr = document.querySelector('tr[data-row-id="' + rowId + '"]');
+  if (!tr) return;
+
+  tr.className = 'lead-row' + (flag ? ' flag-row-' + flag.status : '');
+  const cell = tr.querySelector('.flagcell');
+  if (cell) cell.outerHTML = flagCellHtml(rowId, flag);
+  const newSelect = tr.querySelector('[data-flag-row]');
+  if (newSelect) newSelect.addEventListener('change', event =>
+    setRowFlag(Number(event.target.dataset.flagRow), event.target.value));
+}
+
 async function setRowFlag(rowId, status) {
   const select = document.querySelector('[data-flag-row="' + rowId + '"]');
-  const tr = select ? select.closest('tr') : null;
 
   try {
     if (select) select.disabled = true;
     const result = await patchRowFlag(id, rowId, status);
 
-    if (currentRows) {
-      const row = currentRows.rows.find(r => Number(r._row_id) === rowId);
-      if (row) row.flag = result.flag;
-    }
+    applyRowFlag(rowId, result.flag);
+    (result.also_flagged_rows || []).forEach(rid => applyRowFlag(rid, result.flag));
 
-    if (tr) {
-      tr.className = 'lead-row' + (result.flag ? ' flag-row-' + result.flag.status : '');
-      const cell = tr.querySelector('.flagcell');
-      if (cell) cell.outerHTML = flagCellHtml(rowId, result.flag);
-      const newSelect = tr.querySelector('[data-flag-row]');
-      if (newSelect) newSelect.addEventListener('change', event =>
-        setRowFlag(Number(event.target.dataset.flagRow), event.target.value));
-    }
-
-    toast(status ? 'Marked as ' + FLAG_LABELS[status].toLowerCase() + '.' : 'Status cleared.');
+    toast(flagToastMessage(status, result.also_flagged));
   } catch (err) {
     toast(err.message, true);
     if (select) select.value = (currentRows && currentRows.rows.find(r => Number(r._row_id) === rowId) || {}).flag?.status || '';

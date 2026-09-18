@@ -331,6 +331,14 @@ function patchRowFlag(datasetId, rowId, status) {
   return apiPatch('api/datasets/' + datasetId + '/rows/' + rowId + '/flag', { status: status || null });
 }
 
+/** Toast text for a flag change, mentioning duplicate leads that were
+ *  auto-matched (by email/phone) and flagged the same way. */
+function flagToastMessage(status, alsoFlagged) {
+  const base = status ? 'Marked as ' + FLAG_LABELS[status].toLowerCase() + '.' : 'Status cleared.';
+  if (!alsoFlagged) return base;
+  return base + ' Also matched ' + alsoFlagged + ' duplicate lead' + (alsoFlagged === 1 ? '' : 's') + '.';
+}
+
 /* ── small UI helpers ─────────────────────────────────────────────────── */
 
 let toastTimer = null;
