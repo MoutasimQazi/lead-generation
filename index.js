@@ -139,16 +139,18 @@ function wireSql(){
   });
 }
 
+function searchRowHtml(r){
+  return '<tr class="' + (r.flag ? 'flag-row-' + r.flag.status : '') + '" data-row-id="' + (r._row_id ?? '') + '">' +
+      (resultDatasetId ? flagCellHtml(r._row_id, r.flag) : '') +
+      cols.map(c => cell(c, r[c], r)).join('') +
+    '</tr>';
+}
+
 function paint(){
   const start = page * PER_PAGE;
   const slice = rows.slice(start, start + PER_PAGE);
 
-  $('tbody').innerHTML = slice.map(r =>
-    '<tr class="' + (r.flag ? 'flag-row-' + r.flag.status : '') + '" data-row-id="' + (r._row_id ?? '') + '">' +
-      (resultDatasetId ? flagCellHtml(r._row_id, r.flag) : '') +
-      cols.map(c => cell(c, r[c], r)).join('') +
-    '</tr>'
-  ).join('');
+  $('tbody').innerHTML = slice.map(searchRowHtml).join('');
 
   if (resultDatasetId) {
     $$('[data-flag-row]').forEach(select => select.addEventListener('change', event => {
@@ -173,17 +175,24 @@ function scrollTop(){
   document.querySelector('.tablecard').scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
+/** Rebuilds the whole <tr> with the same searchRowHtml() paint() uses,
+ *  rather than patching the row's class and its status cell as two
+ *  separate DOM edits — those could end up disagreeing (the pill showing
+ *  the new status while the row's own background tint stayed on the old
+ *  one) in a way that only a reload, which always goes through
+ *  searchRowHtml(), would clear up. */
 function applySearchRowFlag(rowId, flag) {
   const row = rows.find(r => Number(r._row_id) === rowId);
-  if (row) row.flag = flag;
+  if (!row) return;
+
+  row.flag = flag;
 
   const tr = document.querySelector('tr[data-row-id="' + rowId + '"]');
   if (!tr) return;
 
-  tr.className = flag ? 'flag-row-' + flag.status : '';
-  const cellEl = tr.querySelector('.flagcell');
-  if (cellEl) cellEl.outerHTML = flagCellHtml(rowId, flag);
-  const newSelect = tr.querySelector('[data-flag-row]');
+  tr.outerHTML = searchRowHtml(row);
+
+  const newSelect = document.querySelector('tr[data-row-id="' + rowId + '"] [data-flag-row]');
   if (newSelect) newSelect.addEventListener('change', event =>
     setSearchRowFlag(Number(event.target.dataset.flagRow), event.target.value));
 }

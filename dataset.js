@@ -578,21 +578,26 @@ function cellHtml(column, value) {
   return '<td>' + esc(v) + '</td>';
 }
 
-/** Applies a flag to one row's table cell + in-memory row, wiring the
- *  change handler back up on the fresh <select> the cell re-render leaves. */
+/** Applies a flag to one row, in memory and on screen. Rebuilds the whole
+ *  <tr> with the same rowHtml() a full page load uses, rather than patching
+ *  the row's class and its status cell as two separate DOM edits — those
+ *  could end up disagreeing (the pill showing the new status while the
+ *  row's own background tint stayed on the old one) in a way that only a
+ *  reload, which always goes through rowHtml(), would clear up. */
 function applyRowFlag(rowId, flag) {
-  if (currentRows) {
-    const row = currentRows.rows.find(r => Number(r._row_id) === rowId);
-    if (row) row.flag = flag;
-  }
+  if (!currentRows) return;
+
+  const row = currentRows.rows.find(r => Number(r._row_id) === rowId);
+  if (!row) return;
+
+  row.flag = flag;
 
   const tr = document.querySelector('tr[data-row-id="' + rowId + '"]');
   if (!tr) return;
 
-  tr.className = 'lead-row' + (flag ? ' flag-row-' + flag.status : '');
-  const cell = tr.querySelector('.flagcell');
-  if (cell) cell.outerHTML = flagCellHtml(rowId, flag);
-  const newSelect = tr.querySelector('[data-flag-row]');
+  tr.outerHTML = rowHtml(row);
+
+  const newSelect = document.querySelector('tr[data-row-id="' + rowId + '"] [data-flag-row]');
   if (newSelect) newSelect.addEventListener('change', event =>
     setRowFlag(Number(event.target.dataset.flagRow), event.target.value));
 }
