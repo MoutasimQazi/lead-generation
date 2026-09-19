@@ -716,7 +716,16 @@ function route_row_flag_update(int $id, int $rowId): never
 
     audit('row.flag_set', $user, $id, ['row_id' => $rowId, 'status' => $status]);
 
-    $matched      = propagate_lead_flag($d, $rowId, $status, $user);
+    // Best-effort: the row above is already flagged and that must stand on
+    // its own regardless of what happens here. A failure while hunting for
+    // duplicate leads (a bad column, an unsupported SQL function on an older
+    // server, ...) must never look like the flag itself failed to save.
+    $matched = [];
+    try {
+        $matched = propagate_lead_flag($d, $rowId, $status, $user);
+    } catch (Throwable $e) {
+        error_log('[lead-site] propagate_lead_flag failed: ' . $e->getMessage());
+    }
     $matchedCount = array_sum(array_map('count', $matched));
 
     if ($matchedCount > 0) {

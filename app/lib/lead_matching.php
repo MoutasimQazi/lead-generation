@@ -65,6 +65,23 @@ function normalize_lead_phone(?string $v): ?string
 }
 
 /**
+ * SQL for "digits only, last 10" on a column, matching normalize_lead_phone()
+ * above. Chained REPLACE() rather than REGEXP_REPLACE() — the latter needs
+ * MariaDB 10.0.5+/MySQL 8.0+, not guaranteed on every host this runs on, and
+ * a phone column that doesn't parse as valid regex-replace input has no
+ * business breaking a lead's flag from saving.
+ */
+function sql_phone_digits(string $colExpr): string
+{
+    $stripped = $colExpr;
+    foreach ([' ', '-', '(', ')', '+', '.', '/'] as $char) {
+        $stripped = "REPLACE($stripped, '$char', '')";
+    }
+
+    return "RIGHT($stripped, 10)";
+}
+
+/**
  * Copies $status onto every other row (in any "ready" dataset) that shares
  * an email or phone number with (dataset_id=$sourceDataset['id'], row_id=
  * $sourceRowId), skipping rows that already carry a flag of their own.
@@ -142,7 +159,7 @@ function propagate_lead_flag(array $sourceDataset, int $sourceRowId, string $sta
         if ($phones !== []) {
             $marks = implode(',', array_fill(0, count($phones), '?'));
             foreach ($contacts['phone'] as $col) {
-                $conds[] = "RIGHT(REGEXP_REPLACE(" . qi($col) . ", '[^0-9]', ''), 10) IN (" . $marks . ')';
+                $conds[] = sql_phone_digits(qi($col)) . ' IN (' . $marks . ')';
                 $params  = array_merge($params, $phones);
             }
         }
