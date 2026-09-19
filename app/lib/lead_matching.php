@@ -5,6 +5,12 @@ require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/identifiers.php';
 
 /**
+ * A dataset larger than this is skipped when hunting for duplicate leads —
+ * see the comment where this is used in propagate_lead_flag().
+ */
+const PROPAGATE_MAX_TABLE_ROWS = 2_000_000;
+
+/**
  * Duplicate-lead flag propagation.
  *
  * The same lead often shows up more than once — re-scraped into a later
@@ -126,7 +132,16 @@ function propagate_lead_flag(array $sourceDataset, int $sourceRowId, string $sta
         return [];
     }
 
-    $datasets = db_all("SELECT id, table_name, columns_json FROM datasets WHERE status = 'ready'");
+    // Matching on email/phone can't use an index — LOWER(TRIM(...)) and the
+    // digits-only phone comparison both rule that out — so this is a full
+    // table scan per candidate dataset. Fine at hundreds of thousands of
+    // rows; at the tens-of-millions scale some of this install's datasets
+    // reach, one scan alone can run for minutes. Skipping those keeps this
+    // to datasets it can actually search promptly.
+    $datasets = db_all(
+        "SELECT id, table_name, columns_json FROM datasets WHERE status = 'ready' AND row_count <= ?",
+        [PROPAGATE_MAX_TABLE_ROWS]
+    );
     $sourceId = (int) $sourceDataset['id'];
     $flagged  = [];
 

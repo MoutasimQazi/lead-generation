@@ -716,36 +716,48 @@ function route_row_flag_update(int $id, int $rowId): never
 
     audit('row.flag_set', $user, $id, ['row_id' => $rowId, 'status' => $status]);
 
-    // Best-effort: the row above is already flagged and that must stand on
-    // its own regardless of what happens here. A failure while hunting for
-    // duplicate leads (a bad column, an unsupported SQL function on an older
-    // server, ...) must never look like the flag itself failed to save.
-    $matched = [];
-    try {
-        $matched = propagate_lead_flag($d, $rowId, $status, $user);
-    } catch (Throwable $e) {
-        error_log('[lead-site] propagate_lead_flag failed: ' . $e->getMessage());
-    }
-    $matchedCount = array_sum(array_map('count', $matched));
-
-    if ($matchedCount > 0) {
-        audit('row.flag_auto_set', $user, $id, [
-            'source_row_id' => $rowId,
-            'status'        => $status,
-            'matched'       => $matched,
-        ]);
-    }
-
-    json_ok([
+    // The flag above is already saved — the client's click is answered here,
+    // not after the step below. propagate_lead_flag() hunts for duplicate
+    // leads across every other dataset, which on a large install can mean
+    // scanning tens of millions of rows with no index to lean on; waiting on
+    // that before responding turned one click into a multi-minute hang.
+    // Nothing past this point changes the response the browser already has.
+    json_respond_early([
+        'success' => true,
         'flag' => [
             'status' => $status,
             'label'  => LEAD_FLAG_STATUSES[$status],
             'set_by' => $user['full_name'],
             'set_at' => date('Y-m-d H:i:s'),
         ],
-        'also_flagged'      => $matchedCount,
-        'also_flagged_rows' => $matched[$id] ?? [],
+        // Whether this click also matched duplicate leads is decided after
+        // the response is already gone, so it can't be reported here; those
+        // rows still pick up the flag once found, just not in this reply.
+        'also_flagged'      => 0,
+        'also_flagged_rows' => [],
     ]);
+
+    // Best-effort from here on: nobody is waiting on it, and a failure here
+    // (a bad column, an unsupported SQL function on an older server, ...)
+    // must never look like the flag itself failed to save — which it didn't.
+    set_time_limit(0);
+
+    try {
+        $matched      = propagate_lead_flag($d, $rowId, $status, $user);
+        $matchedCount = array_sum(array_map('count', $matched));
+
+        if ($matchedCount > 0) {
+            audit('row.flag_auto_set', $user, $id, [
+                'source_row_id' => $rowId,
+                'status'        => $status,
+                'matched'       => $matched,
+            ]);
+        }
+    } catch (Throwable $e) {
+        error_log('[lead-site] propagate_lead_flag failed: ' . $e->getMessage());
+    }
+
+    exit;
 }
 
 function route_rows_delete(int $id, int $rowId): never
