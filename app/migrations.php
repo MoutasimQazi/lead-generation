@@ -117,6 +117,34 @@ function migration_statements(): array
                 REFERENCES app_users(id) ON DELETE SET NULL
             ) $charset",
 
+        // Duplicate-lead flag propagation runs here, one row at a time, from
+        // a cron worker — never inline on the request that set the flag.
+        // That scan can take a long time on a big dataset, and running it
+        // per click (even backgrounded within the request) meant every
+        // status change tied up its own PHP-FPM worker for as long as the
+        // scan took; changing a handful in quick succession was enough to
+        // exhaust the worker pool and take the whole site down. Queuing
+        // instead means setting a flag is always just one fast INSERT here,
+        // no matter how many are changed at once.
+        'lead_flag_jobs' => "
+            CREATE TABLE IF NOT EXISTS lead_flag_jobs (
+              id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+              dataset_id    INT UNSIGNED NOT NULL,
+              row_id        BIGINT UNSIGNED NOT NULL,
+              flag_status   ENUM('contacted','unreachable','won','lost') NOT NULL,
+              set_by        INT UNSIGNED NULL,
+              job_state     ENUM('pending','running','done','failed') NOT NULL DEFAULT 'pending',
+              error_message TEXT NULL,
+              created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              KEY idx_flagjobs_state (job_state, id),
+              CONSTRAINT fk_flagjob_dataset FOREIGN KEY (dataset_id)
+                REFERENCES datasets(id) ON DELETE CASCADE,
+              CONSTRAINT fk_flagjob_user FOREIGN KEY (set_by)
+                REFERENCES app_users(id) ON DELETE SET NULL
+            ) $charset",
+
         'upload_stages' => "
             CREATE TABLE IF NOT EXISTS upload_stages (
               id         CHAR(32) NOT NULL,

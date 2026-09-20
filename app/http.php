@@ -40,38 +40,6 @@ function json_ok(array $data = []): never
     json_out(['success' => true] + $data);
 }
 
-/**
- * Like json_out(), but does not end the script: for a route that has
- * already done everything the client is waiting on and wants to keep going
- * with slow, best-effort follow-up work (a big cross-table scan, say)
- * without making that request hang on it. Flushes the response immediately
- * via fastcgi_finish_request()/litespeed_finish_request() where the SAPI
- * supports it; elsewhere it degrades to an ordinary buffered response, so
- * the follow-up work still runs, just without the early-return benefit.
- */
-function json_respond_early(array $data, int $status = 200): void
-{
-    if (!headers_sent()) {
-        http_response_code($status);
-        header('Content-Type: application/json; charset=utf-8');
-        header('X-Content-Type-Options: nosniff');
-        header('Cache-Control: no-store');
-    }
-
-    echo json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
-
-    if (function_exists('fastcgi_finish_request')) {
-        fastcgi_finish_request();
-    } elseif (function_exists('litespeed_finish_request')) {
-        litespeed_finish_request();
-    } else {
-        while (ob_get_level() > 0) {
-            ob_end_flush();
-        }
-        flush();
-    }
-}
-
 function fail(string $message, int $status = 400, array $extra = []): never
 {
     throw new ApiError($message, $status, $extra);

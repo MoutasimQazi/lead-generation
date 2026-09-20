@@ -210,6 +210,23 @@ For a 100 GB collection, provision enough space for both MariaDB and the source
 archive. Keep `var/inbox` and `var/imported` outside backups if the same source
 files are already backed up elsewhere.
 
+## Duplicate-lead flag propagation
+
+Marking a lead contacted (or won/lost/unreachable) also queues a search for
+that same lead in every other dataset — matched by email or phone — so
+duplicates pick up the same status. That search can scan a large table with
+no index to lean on, so it never runs inline on the request that set the
+flag; it's queued in `lead_flag_jobs` and worked by a second cron job:
+
+```cron
+* * * * * /usr/local/bin/php /home/ACCOUNT/public_html/lead/app/scripts/flag_propagation_worker.php 50 >> /home/ACCOUNT/flag-propagation.log 2>&1
+```
+
+Same shape as the import worker above: the final `50` is the per-invocation
+time budget in seconds, and an advisory MariaDB lock prevents overlapping
+runs. Without this cron entry, setting a flag still saves instantly — the
+queue just never drains, so duplicates never get auto-flagged.
+
 **Libraries** — run on the server; these two carry the security weight:
 
 ```bash
