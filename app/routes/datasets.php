@@ -509,6 +509,30 @@ function route_rows_list(int $id): never
         $params[] = '%' . $value . '%';
     }
 
+    // Status filter. A lead's status lives in lead_flags, not in the dataset's
+    // own table, so it's a subquery on (dataset_id, row_id). IN lets the
+    // optimizer start from the (small) set of flagged rows and hit the big
+    // table by primary key, instead of probing lead_flags once per row.
+    $flagFilter = query_string('flag', '', 16);
+
+    if ($flagFilter !== '') {
+        if ($flagFilter !== 'none' && !array_key_exists($flagFilter, LEAD_FLAG_STATUSES)) {
+            fail('Status filter must be one of: ' . implode(', ', array_keys(LEAD_FLAG_STATUSES)) . ', none.', 422);
+        }
+
+        $where .= $where === '' ? ' WHERE ' : ' AND ';
+
+        if ($flagFilter === 'none') {
+            $where .= 'NOT EXISTS (SELECT 1 FROM lead_flags lf WHERE lf.dataset_id = ? AND lf.row_id = '
+                . qi((string) $d['table_name']) . '.' . qsys('_row_id') . ')';
+            $params[] = $id;
+        } else {
+            $where .= qsys('_row_id') . ' IN (SELECT lf.row_id FROM lead_flags lf WHERE lf.dataset_id = ? AND lf.status = ?)';
+            $params[] = $id;
+            $params[] = $flagFilter;
+        }
+    }
+
     $orderBy = qsys('_row_id') . ' ASC';
 
     if ($sort !== '') {

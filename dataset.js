@@ -8,6 +8,7 @@ let sort = '';
 let dir = 'asc';
 let filters = {};
 let filterOptions = {};
+let flagFilter = '';
 let assignmentEmployees = [];
 
 /* ── the view state lives in the URL ──────────────────────────────────────
@@ -26,6 +27,7 @@ function stateParams() {
   }
   if (page > 1) params.set('page', page);
   if (Object.keys(filters).length) params.set('filters', JSON.stringify(filters));
+  if (flagFilter) params.set('flag', flagFilter);
   return params;
 }
 
@@ -52,6 +54,9 @@ function readState() {
   } catch (err) {
     filters = {};
   }
+
+  const flagParam = params.get('flag') || '';
+  flagFilter = flagParam === 'none' || FLAG_LABELS[flagParam] ? flagParam : '';
 
   if ($('q')) $('q').value = term;
 }
@@ -322,6 +327,7 @@ async function loadRows() {
   const params = new URLSearchParams({
     page, per, q: term, sort, dir,
     filters: JSON.stringify(filters),
+    flag: flagFilter,
   });
 
   try {
@@ -338,9 +344,22 @@ function renderRows(data) {
   currentRows = data;
 
   if (!data.rows.length) {
+    const filtered = term || flagFilter || Object.keys(filters).length;
     $('status').innerHTML = '<div class="empty"><h3>' +
-      (term ? 'Nothing matches "' + esc(term) + '"' : 'No rows yet') + '</h3>' +
-      '<p>' + (term ? 'Try a shorter search.' : 'This table is empty.') + '</p></div>';
+      (term ? 'Nothing matches "' + esc(term) + '"'
+        : filtered ? 'No rows match these filters' : 'No rows yet') + '</h3>' +
+      '<p>' + (filtered ? 'Try a shorter search or different filters.' : 'This table is empty.') + '</p>' +
+      (filtered ? '<p><button type="button" class="btn" id="clearFilters">Clear all filters</button></p>' : '') +
+      '</div>';
+    const clear = $('clearFilters');
+    if (clear) clear.addEventListener('click', () => {
+      term = '';
+      filters = {};
+      flagFilter = '';
+      page = 1;
+      if ($('q')) $('q').value = '';
+      pushAndLoad();
+    });
     return;
   }
 
@@ -371,13 +390,22 @@ function renderRows(data) {
     '</th>';
   }).join('');
 
+  const statusHead =
+    '<div class="th-row">Status</div>' +
+    '<select class="column-filter" data-flag-filter aria-label="Filter by status">' +
+      '<option value="">All</option>' +
+      Object.keys(FLAG_LABELS).map(key =>
+        '<option value="' + key + '"' + (flagFilter === key ? ' selected' : '') + '>' + FLAG_LABELS[key] + '</option>').join('') +
+      '<option value="none"' + (flagFilter === 'none' ? ' selected' : '') + '>No status</option>' +
+    '</select>';
+
   $('status').innerHTML =
     '<div class="sechead"><h2>Rows</h2><span class="cbadge">' + fmt(data.total) + '</span></div>' +
     flagLegend() +
     '<div class="tablecard">' +
       '<div class="pager pager-top" id="pagerTop"></div>' +
       '<div class="scroll"><table class="rowtable">' +
-        '<thead><tr><th class="statuscol">Status</th>' + head + '</tr></thead>' +
+        '<thead><tr><th class="statuscol">' + statusHead + '</th>' + head + '</tr></thead>' +
         '<tbody>' + data.rows.map(rowHtml).join('') + '</tbody>' +
       '</table></div>' +
       '<div class="pager" id="pager"></div>' +
@@ -400,6 +428,12 @@ function renderRows(data) {
       input.addEventListener('keydown', event => { if (event.key === 'Enter') applyFilter(input); });
     }
   });
+
+  $$('[data-flag-filter]').forEach(select => select.addEventListener('change', () => {
+    flagFilter = select.value;
+    page = 1;
+    pushAndLoad();
+  }));
 
   $$('[data-copy-col]').forEach(button =>
     button.addEventListener('click', () => copyColumn(button.dataset.copyCol)));
