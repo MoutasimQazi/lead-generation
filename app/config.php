@@ -135,6 +135,14 @@ const BUILTIN_CONFIG = [
     'SESSION_SECRET' => '9d12bc3c676fde3543b46e389a6a1c58ee8a868d8401fdc76281e76ce6d707194ad28b84aa68691df6ccbd10ee1de681',
     'SESSION_HOURS'  => '12',
 
+    // Clutch pipeline source. The password is deliberately NOT built in:
+    // set CLUTCH_DB_PASSWORD in .env or the environment.
+    'CLUTCH_DB_HOST'      => 'localhost',
+    'CLUTCH_DB_PORT'      => '3306',
+    'CLUTCH_DB_NAME'      => 'movenetics_testing',
+    'CLUTCH_DB_USER'      => 'movenetics_clutch',
+    'CLUTCH_SOURCE_TABLE' => 'leads',
+
     'N8N_WEBHOOK_URL'     => 'https://n8n.moveneticsdigital.com/webhook/lead-search-v2',
     'N8N_API_KEY'         => '',
     'N8N_TIMEOUT_SECONDS' => '120',
@@ -225,6 +233,16 @@ function build_config(): array
         'leads_table'    => trim((string) $get('LEADS_TABLE', '')),
         'session_secret' => $secret,
         'session_hours'  => max(1, (int) $get('SESSION_HOURS', '12')),
+
+        'clutch_db_host'      => (string) $get('CLUTCH_DB_HOST', 'localhost'),
+        'clutch_db_port'      => (int) $get('CLUTCH_DB_PORT', '3306'),
+        'clutch_db_name'      => (string) $get('CLUTCH_DB_NAME', ''),
+        'clutch_db_user'      => (string) $get('CLUTCH_DB_USER', ''),
+        'clutch_db_pass'      => (string) $get('CLUTCH_DB_PASSWORD', ''),
+        'clutch_source_table' => (string) $get('CLUTCH_SOURCE_TABLE', 'leads'),
+        'clutch_log_file'     => (string) $get('CLUTCH_LOG_FILE', ''),
+        'clutch_app_url'      => rtrim((string) $get('CLUTCH_APP_URL', ''), '/'),
+        'clutch_api_key'      => (string) $get('CLUTCH_API_KEY', ''),
 
         'n8n_url'     => $n8nUrl,
         'n8n_key'     => (string) $get('N8N_API_KEY', ''),

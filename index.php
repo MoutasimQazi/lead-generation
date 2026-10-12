@@ -28,6 +28,7 @@ require_once $appRoot . '/routes/users.php';
 require_once $appRoot . '/routes/large_imports.php';
 require_once $appRoot . '/routes/chunk_uploads.php';
 require_once $appRoot . '/routes/dashboard.php';
+require_once $appRoot . '/routes/clutch.php';
 require_once $appRoot . '/lib/audit.php';
 
 /**
@@ -119,6 +120,9 @@ function routes(): array
         ['DELETE', '/api/users/{id}',              'route_users_delete'],
         ['GET',    '/api/users/{id}/assignments', 'route_user_assignments_get'],
         ['PATCH',  '/api/users/{id}/assignments', 'route_user_assignments_update'],
+
+        ['GET',    '/api/clutch',      'route_clutch_status'],
+        ['POST',   '/api/clutch/sync', 'route_clutch_sync'],
 
         ['GET',    '/api/audit',      'route_audit_list'],
         ['GET',    '/api/dashboard',  'route_dashboard'],

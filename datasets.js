@@ -27,6 +27,7 @@ const CHEVRON_ICON =
     $('newFolder').hidden = false;
     $('uploadLink').hidden = false;
     $('selectAllWrap').hidden = false;
+    initClutch();
   }
 
   await load();
@@ -433,5 +434,61 @@ async function deleteFolder(id) {
     await load();
   } catch (err) {
     toast(err.message, true);
+  }
+}
+
+/* ── Clutch leads (admin) ─────────────────────────────────────────────── */
+
+function initClutch() {
+  $('clutchBox').hidden = false;
+  $('clutchRefresh').onclick = () => loadClutch();
+  $('clutchSync').onclick = async () => {
+    const btn = $('clutchSync');
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+    try {
+      const r = await apiPost('api/clutch/sync', {});
+      toast('Synced ' + fmt(r.read) + ' rows; clutch table has ' + fmt(r.total));
+      await Promise.all([loadClutch(), load()]);
+    } catch (err) {
+      $('clutchInfo').className = 'notice bad';
+      $('clutchInfo').innerHTML = '<strong>Sync failed.</strong> ' + esc(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sync now';
+    }
+  };
+  loadClutch();
+}
+
+async function loadClutch() {
+  const info = $('clutchInfo');
+  try {
+    const d = await apiGet('api/clutch?lines=200');
+    $('clutchCount').textContent = fmt(d.row_count);
+
+    const last = d.syncs[0];
+    let html;
+    if (!d.configured) {
+      info.className = 'notice bad';
+      html = '<strong>Not configured.</strong> Set CLUTCH_DB_PASSWORD (and CLUTCH_DB_* if different) in .env.';
+    } else if (!last) {
+      info.className = 'notice';
+      html = 'No sync has run yet. Press <strong>Sync now</strong> to copy the Clutch leads into the <span class="mono">clutch</span> table.';
+    } else {
+      info.className = 'notice ' + (last.status === 'ok' ? 'good' : last.status === 'failed' ? 'bad' : '');
+      html = '<strong>Last sync: ' + esc(last.status) + '</strong> at ' + esc(last.finished_at || last.started_at) +
+             ' · ' + esc(last.message || '');
+    }
+    info.innerHTML = html;
+
+    const pre = $('clutchLog');
+    pre.textContent = d.log.lines.length
+      ? d.log.lines.join('\n')
+      : (d.log.note || 'The Clutch app log is empty.');
+    pre.scrollTop = pre.scrollHeight;
+  } catch (err) {
+    info.className = 'notice bad';
+    info.innerHTML = '<strong>Could not load Clutch status.</strong> ' + esc(err.message);
   }
 }
